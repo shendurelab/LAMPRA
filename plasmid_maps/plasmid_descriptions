@@ -1,0 +1,9 @@
+Plasmid_ID	Description
+pJBL007_pCMV_hyPBase	Hyperactive piggyBac transposase used for LAMPRA integration
+PB-MPRA-intermediate-1	Intermediate vector 1 for first cloning step
+PB-MPRA-intermediate-2	Intermediate vector 2 for first cloning step
+PB-MPRA-intermediate-3	Intermediate vector 3 for first cloning step
+PB-MPRA-intermediate-4	Intermediate vector 4 for first cloning step
+PB-MPRA-intermediate-5	Intermediate vector 5 for first cloning step
+PB-MPRA	Final PB MPRA vector for second cloning step
+PB-MPRA-NMU-BC	Example of single clone from final assembled NMU library - including five 1-kb inserts and 16 bp BC (denoted as Ns here)
