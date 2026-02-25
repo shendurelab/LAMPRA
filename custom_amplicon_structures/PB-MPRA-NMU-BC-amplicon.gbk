@@ -1,0 +1,95 @@
+LOCUS       Amplified                156 bp    DNA     linear   SYN 25-FEB-2026
+DEFINITION  .
+ACCESSION   .
+VERSION     .
+KEYWORDS    .
+SOURCE      synthetic DNA construct
+  ORGANISM  PCR product
+REFERENCE   1  (bases 1 to 156)
+  AUTHORS   SnapGene License
+  TITLE     Direct Submission
+  JOURNAL   Exported Feb 25, 2026 from SnapGene 8.2.2
+            https://www.snapgene.com
+FEATURES             Location/Qualifiers
+     source          1..156
+                     /mol_type="other DNA"
+                     /organism="PCR product"
+     source          30..132
+                     /mol_type="other DNA"
+                     /note="color: #ffffff"
+                     /organism="recombinant plasmid"
+     primer_bind     1..60
+                     /label=rand-P5-E##
+                     /note="color: black; sequence: 
+                     AATGATACGGCGACCACCGAGATCTACACNNNNNNNNNNACACTCTTTCCCTACACGAC
+                     G; added: 2026-02-25"
+     misc_feature    1..29
+                     /label=P5
+                     /note="color: #0000ff"
+     primer_bind     1..20
+                     /label=P5
+                     /note="color: black; sequence: AATGATACGGCGACCACCGA; added:
+                     2026-02-25"
+     gap             30..39
+                     /estimated_length=10
+     misc_feature    40..72
+                     /label=TruSeq P5
+                     /note="color: #a6acb3"
+     primer_bind     complement(40..72)
+                     /label=TruSeq-I2
+                     /note="color: black; sequence: 
+                     AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT; added: 2026-02-25"
+     primer_bind     40..72
+                     /label=TruSeq-R1
+                     /note="color: black; sequence: 
+                     ACACTCTTTCCCTACACGACGCTCTTCCGATCT; added: 2026-02-25"
+     misc_feature    73..88
+                     /label=BC
+                     /note="color: #dcdcdc"
+     gap             73..88
+                     /label=BC
+                     /estimated_length=16
+                     /note="color: #dcdcdc"
+     primer_bind     89..122
+                     /label=randMPRAseq-I1
+                     /note="color: black; sequence: 
+                     CCGGTCGCCACCATGGTGAGCAAGGGCGAGGAGC; added: 2026-02-25"
+     primer_bind     complement(89..122)
+                     /label=randMPRAseq-R2
+                     /note="color: black; sequence: 
+                     GCTCCTCGCCCTTGCTCACCATGGTGGCGACCGG; added: 2026-02-25"
+     regulatory      95..104
+                     /label=Kozak sequence
+                     /note="vertebrate consensus sequence for strong initiation
+                     of translation (Kozak, 1987)"
+                     /note="color: #a6acb3"
+                     /regulatory_class="other"
+     primer_bind     complement(100..156)
+                     /label=P7-pLSmp-assUMI-gfp
+                     /note="color: black; sequence: 
+                     CAAGCAGAAGACGGCATACGAGATNNNNNNNNNNGCTCCTCGCCCTTGCTCACCATG; 
+                     added: 2026-02-25"
+     CDS             join(101..103,104..106,107..122)
+                     /codon_start=1
+                     /product="the original enhanced GFP (Yang et al., 1996)"
+                     /label=EGFP
+                     /note="mammalian codon-optimized"
+                     /note="This feature has 3 segments:
+                        1: 101 .. 103 / #05fd14
+                        2: 104 .. 106 / #05fd14 / 1a
+                        3: 107 .. 122 / #05fd14"
+                     /translation="MVSKGEE"
+     gap             123..132
+                     /estimated_length=10
+     misc_feature    133..156
+                     /label=P7
+                     /note="color: #ff0000"
+     primer_bind     complement(136..156)
+                     /label=P7
+                     /note="color: black; sequence: CAAGCAGAAGACGGCATACGA; 
+                     added: 2026-02-25"
+ORIGIN
+        1 aatgatacgg cgaccaccga gatctacacn nnnnnnnnna cactctttcc ctacacgacg
+       61 ctcttccgat ctnnnnnnnn nnnnnnnncc ggtcgccacc atggtgagca agggcgagga
+      121 gcnnnnnnnn nnatctcgta tgccgtcttc tgcttg
+//
