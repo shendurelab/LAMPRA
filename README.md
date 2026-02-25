@@ -14,7 +14,7 @@ See plasmid_descriptions for a description of all plasmids.
 
 ## Custom Sequencing Amplicons
 
-Structure of custom sequencing amplicons used in this study are listed in "custom_amplicon_structures".
+Structures of custom sequencing amplicons used in this study are listed in "custom_amplicon_structures".
 
 ## MPRA Processing Scripts
 
