@@ -4,18 +4,17 @@ Scripts, plasmid maps, and amplicon maps for: Locus-scAle Massively Parallel Rep
 
 Note: scripts contain herein do not currently constitute streamlined pipelines and are shared for transparency. Iterations and improvement will be made in near future.
 
-Organization of repositories:
-
-Plasmid maps can be found in "plasmid_maps" (refer to manuscript Methods for further details).
-
-Structure of custom sequencing amplicons used in this study are listed in "custom_amplicon_structures".
-
 Scripts are separated in subdirectories organized by categories as detailed below with short descriptive of contents.
 
 
 ## Plasmid Maps
 
-*Coming soon.*
+Plasmid maps can be found in "plasmid_maps" (refer to manuscript Methods for further details).
+See plasmid_descriptions for a description of all plasmids. 
+
+## Custom Sequencing Amplicons
+
+Structure of custom sequencing amplicons used in this study are listed in "custom_amplicon_structures".
 
 ## MPRA Processing Scripts
 
