@@ -19,7 +19,7 @@ Structures of custom sequencing amplicons used in this study are listed in "cust
 # Scripts
 ## MPRA Processing Scripts
 
-*Coming soon.*
+The bash pipeline (arr_bulk_mBC_UMI_count_MPRA.sh) is first run, generating per-library barcode quantification files. This pipeline performs PEAR-based error correction of barcode reads, UMI extraction, and homopolymer filtering. The per-library barcode counts are then merged with a pre-determined barcode-to-insert association table using merge_BC_dictionaries.R. Finally, the merged count table is processed using first_pass_analysis_MPRA_dictionaries.R to generate winsorized RNA/DNA activity scores.
 
 ## Modeling Scripts
 
