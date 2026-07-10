@@ -2,7 +2,7 @@
 
 Plasmid maps, amplicon maps, and scripts for: Locus-scAle Massively Parallel Reporter Assays (LAMPRAs).
 
-Note: scripts contain herein do not currently constitute streamlined pipelines and are shared for transparency. Iterations and improvements will be made in the near future.
+Note: scripts contained herein do not currently constitute streamlined pipelines and are shared for transparency. Iterations and improvements will be made in the near future.
 
 Scripts are separated in subdirectories organized by categories as detailed below with short descriptive of contents.
 
