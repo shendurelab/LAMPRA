@@ -177,14 +177,3 @@ published run.
   plot are produced downstream (in R) from these raw metrics, not stored here.
 - **Comparison tables**: `data/combined_df.csv`, `data/holdout_eval_combined.csv`.
 
----
-
-## Reproducibility notes
-
-- All splits use `random_state=42` and a single train/val/holdout partition
-  (no CV). The same two-stage split is reproduced identically in every script.
-- Only the best model per family is saved (no top-k candidate `.pkl`s).
-- The replicated learning curve holds the holdout fixed across all 50 replicates;
-  replicate `r` draws training rows with permutation seed `42 + r`, so replicate 0
-  reproduces a single-draw curve exactly and the spread across replicates gives
-  the confidence band.
