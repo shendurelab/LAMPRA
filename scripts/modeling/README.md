@@ -95,9 +95,6 @@ LAMPRA_ML/
 └── models/                              # created by training (RF/XGB/linear .pkl + results/)
 ```
 
-`models/` and the merged/holdout comparison CSVs are **generated** by running the
-pipeline; they are not shipped in the repo.
-
 ---
 
 ## Running the pipeline
