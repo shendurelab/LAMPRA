@@ -1,15 +1,5 @@
 # LAMPRA modeling
 
-Machine-learning models that predict MPRA expression (`avg_Rep`) of multi-insert
-constructs from the **identity and orientation** of the five inserts they carry.
-Insert id and orientation are encoded as **categorical (integer-coded) variables**
-and consumed by four model families (linear, linear-with-interactions,
-random forest, gradient boosting).
-
-This repository contains everything needed to reproduce the modeling results
-from raw scores: the preprocessing, training, evaluation, learning-curve
-(down-sampling), and model-comparison scripts, plus a pinned software environment.
-
 ---
 
 ## Encoding scheme
