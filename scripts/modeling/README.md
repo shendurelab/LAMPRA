@@ -1,4 +1,4 @@
-# LAMPRA_ML
+# LAMPRA modeling
 
 Machine-learning models that predict MPRA expression (`avg_Rep`) of multi-insert
 constructs from the **identity and orientation** of the five inserts they carry.
