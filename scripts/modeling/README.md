@@ -41,14 +41,6 @@ avg_Rep                                   # target
 | **RandomForestRegressor** | Integer codes fed directly (sklearn RF has no native categorical support). |
 | **XGBRegressor** | `enable_categorical=True, tree_method='hist'`; columns cast to `pd.Categorical` with stable categories before `.fit`. |
 
-### Data subsets
-
-Three datasets are produced by preprocessing and modeled independently:
-
-- `full` — all constructs.
-- `iiiF_only` — only constructs whose 5th insert is `eNMU_region_iii` **and**
-  `forward`.
-- `except_iiiF` — the complement of `iiiF_only`.
 
 ### Splits (single split, no cross-validation)
 
