@@ -118,32 +118,64 @@ python notebooks/model_comparison_merge.py           # 6a. → data/combined_df.
 python notebooks/model_comparison_v3.1.py            # 6b. → data/holdout_eval_combined.csv
 ```
 
-### Option B — without a cluster (plain Python)
+### Option B — without a cluster
 
-The Python scripts are cluster-independent; the qsub wrappers only add scheduling.
-Equivalent direct calls (run from the repo root, `LAMPRA_ML` env active):
+You do **not** need SGE. The `submit_*.sh` wrappers are ordinary bash scripts —
+the `#$ …` lines are SGE directives that plain `bash` simply ignores. Each
+wrapper activates the `LAMPRA_ML` env, resolves paths relative to the directory
+you run it from, loops over **all three subsets** and **every best model**, and
+prints its progress to the terminal. So the simplest full reproduction is to run
+the same wrappers with `bash` instead of `qsub`.
+
+#### B1 (recommended) — run the wrappers with `bash`, from the repo root
+
+```bash
+conda activate LAMPRA_ML
+bash scripts/submit_preprocess.sh                    # 1. raw → processed CSVs (required; not shipped)
+bash scripts/submit_train_linear.sh                  # 2. linear + linear-interactions, all 3 subsets
+bash scripts/submit_train_rfxgb.sh                   # 3. RF + XGB, all 3 subsets
+bash scripts/submit_evaluate_best.sh                 # 4. holdout eval for EVERY best model
+bash scripts/submit_downsample_rfonly_1pct_50perm.sh # 5. RF learning curve, 50 permutations
+python notebooks/model_comparison_merge.py           # 6a. → data/combined_df.csv
+python notebooks/model_comparison_v3.1.py            # 6b. → data/holdout_eval_combined.csv
+```
+
+This reproduces the full published run. Training is single-threaded-ish and can
+take tens of minutes per stage on a laptop; the RF grid search (stage 3) is the
+slowest.
+
+#### B2 — granular `python` calls
+
+The wrappers just loop these calls. Run them by hand if you want to reproduce
+only part of the pipeline. Run from the repo root with the `LAMPRA_ML` env active.
 
 ```bash
 cd scripts
 
-# 1. Preprocess (already provided under data/processed/; rerun to regenerate)
+# 1. Preprocess — REQUIRED (processed CSVs are not shipped; regenerated here).
 python preprocess.py \
     --input ../data/raw/v2_longMPRA_scores_with_orientation_20260127.txt \
     --output-dir ../data/processed/categorical --target avg_Rep \
     --holdout-size 0.15 --val-size 0.10 --random-state 42
 
-# 2. Linear models — repeat per subset (full / iiiF_only / except_iiiF),
-#    and again with --add_interactions for the linear-interactions family.
+# 2–3. Train. The example below does the `full` subset only. To match the
+#      published run, repeat for EACH subset, pairing the input CSV with the
+#      matching output dir:
+#        full        -> full_processed_categorical.csv
+#        iiiF_only   -> subset_iiiF_only.csv
+#        except_iiiF -> subset_except_iiiF.csv
 python train_linear.py -i ../data/processed/categorical/full_processed_categorical.csv \
-    -o ../models/linear/full
+    -o ../models/linear/full                                    # OLS/Ridge/Lasso/ElasticNet
 python train_linear.py -i ../data/processed/categorical/full_processed_categorical.csv \
-    -o ../models/linear-interactions/full --add_interactions
-
-# 3. Random forest + XGBoost — repeat per subset.
+    -o ../models/linear-interactions/full --add_interactions    # same, + pairwise interactions
 python train_rfxgb.py -i ../data/processed/categorical/full_processed_categorical.csv \
-    -o ../models/rfxgb/full
+    -o ../models/rfxgb/full                                      # RandomForest + XGBoost
 
-# 4. Holdout evaluation of a saved best model (writes *_holdout_eval.json).
+# 4. Holdout evaluation. NOTE: combined_df.csv's holdout columns stay empty
+#    unless EVERY best model is evaluated — not just rf/full. The example does
+#    one model; `submit_evaluate_best.sh` loops all of them. Repeat this call
+#    for each *_best_*.pkl under models/<family>/<subset>/, pairing it with that
+#    subset's CSV:
 python evaluate_holdout.py \
     --model-path '../models/rfxgb/full/rf_best_*.pkl' \
     --data-path ../data/processed/categorical/full_processed_categorical.csv
@@ -160,8 +192,9 @@ python downsample_replicates.py \
 cd .. && python notebooks/model_comparison_merge.py && python notebooks/model_comparison_v3.1.py
 ```
 
-The `submit_*.sh` files show the exact arguments used for every subset in the
-published run.
+Both comparison scripts tolerate missing models (they print `SKIP … no model
+found` and continue), so a partial run still succeeds — but the resulting tables
+will only cover whatever you actually trained and evaluated.
 
 ---
 
