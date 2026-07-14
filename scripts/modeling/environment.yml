@@ -1,0 +1,23 @@
+# Reproducible conda environment for the LAMPRA_ML modeling pipeline.
+#
+# Exact pins for the modeling stack so that results (coefficients, R2) and the
+# saved joblib .pkl models reproduce / load identically. Versions captured from
+# the environment used to train the published models.
+#
+#   conda env create -f environment.yml
+#   conda activate LAMPRA_ML
+#
+# NOTE: the saved .pkl pipelines/models were serialized under scikit-learn
+# 1.6.1 / xgboost 3.1.2; loading them under other versions may warn or fail.
+name: LAMPRA_ML
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12.9
+  - scikit-learn=1.6.1
+  - xgboost=3.1.2
+  - numpy=2.2.6
+  - scipy=1.16.1
+  - pandas=2.2.3
+  - joblib=1.5.1
+  - matplotlib-base=3.10.5   # learning-curve plots (downsample_*.py)

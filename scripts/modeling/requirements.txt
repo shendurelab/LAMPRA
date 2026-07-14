@@ -1,0 +1,15 @@
+# pip alternative to environment.yml (use Python 3.12.x).
+# Exact pins for the LAMPRA_ML modeling stack so results and the saved joblib
+# .pkl models reproduce / load identically.
+#
+#   python -m pip install -r requirements.txt
+#
+# The .pkl models were serialized under scikit-learn 1.6.1 / xgboost 3.1.2;
+# loading them under other versions may warn or fail.
+scikit-learn==1.6.1
+xgboost==3.1.2
+numpy==2.2.6
+scipy==1.16.1
+pandas==2.2.3
+joblib==1.5.1
+matplotlib==3.10.5
