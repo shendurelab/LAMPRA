@@ -1,6 +1,6 @@
 # LAMPRA
 
-Plasmid maps, amplicon maps, and scripts for: Long @$$ Massively Parallel Reporter Assays (LAMPRAs).
+Plasmid maps, amplicon maps, and scripts for: Locus-Scale Massively Parallel Reporter Assays (LAMPRAs).
 
 Note: scripts contained herein do not currently constitute streamlined pipelines and are shared for transparency. Iterations and improvements will be made in the near future.
 
