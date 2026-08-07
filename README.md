@@ -33,4 +33,4 @@ See scripts/modeling/README.md for the encoding scheme, data splits, environment
 
 ## Figure Scripts
 
-Figures are generated from the processed outputs of the above pipelines above using two R Markdown notebooks (LAMPRA_Fig1_FigS1.Rmd and LAMPRA_Fig2_FigS2_FigS3.Rmd). Each script writes its panels as individual PDFs to a dedicated output directories.
+Figures are generated from the processed outputs of the above pipelines above (data subfolder) using two R Markdown notebooks (LAMPRA_Fig1_FigS1.Rmd and LAMPRA_Fig2_FigS2_FigS3.Rmd). Each script writes its panels as individual PDFs to a dedicated output directory.
