@@ -1,0 +1,846 @@
+---
+title: "LAMPRA Paper Figures — Fig1 & FigS1"
+author: "cbiar"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    fig_width: 10
+    fig_height: 10
+  pdf_document:
+    toc: true
+    toc_depth: '3'
+editor_options:
+  chunk_output_type: console
+---
+
+<!--
+OVERVIEW
+========
+  Fig 1c - Read counts per insert combination (histogram)
+  Fig 1d - Replicate-vs-replicate scatter
+  Fig 1e - LAMPRA activity violin by promoter group 
+  
+  Fig S1b - Total read counts per insert, forward vs reverse (bar)
+  Fig S1c - Element distribution by slot (stacked bar)
+  Fig S1d - LAMPRA activity violin by S5 identity 
+
+HOW TO RUN
+  1. Open this file from the project's RStudio .Rproj (or set the working
+     directory to the project root) so that here::here() resolves correctly.
+  2. Make sure the input files in the "Input Paths" chunk exist under
+     the project root.
+  3. Knit, or run chunks top-to-bottom. Chunk order matters.
+  4. Figures are written to ./figures-fig1-figS1/ as PDFs.
+
+DEPENDENCIES
+  CRAN: tidyverse, scales, RColorBrewer, cowplot, sysfonts, showtext, here.
+  Fonts: the setup chunk loads Arial from macOS paths — see the note there if
+  you're on Linux/Windows.
+-->
+
+```{r setup, include=FALSE}
+# ── Output directory ──
+FIG_DIR <- file.path(here::here(), "figures-fig1-figS1")
+dir.create(FIG_DIR, recursive = TRUE, showWarnings = FALSE)
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 10,
+  dpi = 150,
+  dev = c("pdf", "png"),
+  fig.path = paste0(FIG_DIR, "/")
+)
+```
+
+# Setup
+
+## Libraries
+
+```{r libraries}
+library(tidyverse)
+library(scales)       
+library(RColorBrewer) 
+library(cowplot)      
+library(sysfonts)     
+library(showtext)     
+library(egg)
+library(gtable)
+library(grid)
+
+# ── Load Arial for PDF/PNG output ──
+# NOTE: these paths are macOS-specific. On Linux/Windows, point font_add() at a
+# local Arial .ttf (or swap in any installed font and set FONT below to match).
+# If you don't care about the exact typeface, you can delete this block and the
+# showtext_auto() call — plots will fall back to the default device font.
+font_add("Arial", regular = "/Library/Fonts/Arial.ttf",
+         bold = "/Library/Fonts/Arial Bold.ttf",
+         italic = "/Library/Fonts/Arial Italic.ttf",
+         bolditalic = "/Library/Fonts/Arial Bold Italic.ttf")
+
+showtext_auto()
+
+# Shorthand for text geoms
+FONT <- "Arial"
+
+# ── Project theme ──
+pub_theme <- function() {
+  theme_cowplot(font_size = 8) %+replace%
+    theme(
+      strip.background = element_rect(color = 'black',
+                                      fill = 'grey90',
+                                      linetype = "solid",
+                                      linewidth = 0.25),
+      text             = element_text(size = 8, family = FONT),
+      axis.text.x      = element_text(size = 8),
+      axis.text.y      = element_text(size = 8, hjust = 1, margin = margin(r = 2)),
+      axis.title.x      = element_text(size = 9, margin = margin(t = -1)),
+      axis.title.y      = element_text(size = 9, angle = 90, margin = margin(r = -1)),
+      axis.line         = element_line(linewidth = 0.25),
+      strip.text        = element_text(family = FONT, size = 8, face = 'bold',
+                                       margin = margin(b = 2.5, t = 2.5)),
+      legend.text       = element_text(size = 8),
+      legend.title      = element_text(size = 8),
+      legend.position   = 'right',
+      legend.title.align = 0.5,
+      plot.tag          = element_text(size = 14, face = 'bold'),
+      plot.title        = element_text(hjust = 0.5, face = 'plain', size = 12,
+                                       margin = margin(b = 10))
+    )
+}
+theme_set(pub_theme())
+
+# ── Panel dimension constants ─────────────────────────────────────────────────
+PANEL_W      <- unit(2.3, "in")
+PANEL_H      <- unit(2.3, "in")
+
+# ── Annotation text size (matches theme's 10pt in ggplot2 size units) ─────────
+ANNOT_SIZE <- 8 / .pt   # ≈ 3.53 — use this in annotate() and stat_summary()
+
+# ── Log10 axis helper ─────────────────────────────────────────────────────────
+# Applies consistent breaks (10^-2 through 10^3), 10^x labels, and logticks
+# to whichever axis you specify. Use like:
+#   p + log_scale("x") + log_scale("y")
+# The `limits` arg is optional — pass c(lo, hi) in raw (untransformed) units.
+LOG_BREAKS <- 10^(-2:3)   # 0.01, 0.1, 1, 10, 100, 1000
+
+log_scale <- function(axis = c("x", "y"), limits = NULL, expand = waiver(), breaks = LOG_BREAKS) {
+  axis <- match.arg(axis)
+  args <- list(
+    trans   = "log10",
+    breaks  = breaks,
+    labels  = scales::label_log(base = 10),
+    limits  = limits,
+    expand  = expand
+  )
+  if (axis == "x") do.call(scale_x_continuous, args)
+  else             do.call(scale_y_continuous, args)
+}
+
+# ── save_fig() helper ─────────────────────────────────────────────────────────
+# Wraps ggsave, always writing to FIG_DIR.  Call like:
+#   save_fig("Fig1_scatter", p, width = 7, height = 5)
+save_fig <- function(name, plot = last_plot(),
+                     panel_width  = PANEL_W,
+                     panel_height = PANEL_H,
+                     dpi = 300, ext = "pdf", ...) {
+  fpath <- file.path(FIG_DIR, paste0(name, ".", ext))
+
+  sized   <- egg::set_panel_size(plot, width = panel_width, height = panel_height)
+  total_w <- grid::convertWidth( gtable::gtable_width(sized),  "in", valueOnly = TRUE)
+  total_h <- grid::convertHeight(gtable::gtable_height(sized), "in", valueOnly = TRUE)
+
+  if (ext == "pdf") {
+    quartz(type = "pdf", file = fpath,
+           width = total_w, height = total_h, family = "Arial")
+    grid::grid.draw(sized)
+    dev.off()
+  } else if (ext == "png") {
+    quartz(type = "png", file = fpath,
+           width = total_w * dpi, height = total_h * dpi, family = "Arial")
+    grid::grid.draw(sized)
+    dev.off()
+  }
+
+  if (file.exists(fpath) && file.size(fpath) > 0) {
+    message(sprintf("Saved: %s  [%.2f × %.2f in]", fpath, total_w, total_h))
+  } else {
+    warning(sprintf("FAILED to write: %s", fpath))
+  }
+  invisible(fpath)
+}
+```
+
+## Input Paths
+
+This subset reads these data files (all expected under the project root,
+resolved with `here::here()` — run from the project's `.Rproj` or set the
+working directory there).
+
+| Variable      | File                                                        
+|---------------|-------------------------------------------------------------
+| `RAW_DATA`    | `data/raw/v2_longMPRA_scores_with_orientation_20260127.txt` 
+| `PACBIO_DATA` | `data/association/seq008_longMPRA_v1_association_df.txt.gz`                 
+| `PACBIO_MIN`  | `data/association/seq008_longMPRA_v1_association_minimal.txt.gz`            
+
+```{r input-paths}
+# ── Project root ──
+PROJECT <- here::here()
+
+# ── Raw LAMPRA scores ──
+RAW_DATA    <- file.path(PROJECT, "data/raw/v2_longMPRA_scores_with_orientation_20260127.txt")
+
+# ── PacBio barcode-association data ──
+PACBIO_DATA <- file.path(PROJECT, "data/association/seq008_longMPRA_v1_association_df.txt.gz")
+PACBIO_MIN  <- file.path(PROJECT, "data/association/seq008_longMPRA_v1_association_minimal.txt.gz")
+```
+
+## Color Palette
+
+```{r colors}
+# RColorBrewer Set2 — 8 colors
+SET2 <- brewer.pal(8, "Set2")
+names(SET2) <- c("teal", "orange", "lavender", "pink",
+                 "yellow_green", "yellow", "tan", "gray")
+# 1  #66C2A5  teal
+# 2  #FC8D62  orange
+# 3  #8DA0CB  lavender
+# 4  #E78AC3  pink
+# 5  #A6D854  yellow-green
+# 6  #FFD92F  yellow
+# 7  #E5C494  tan
+# 8  #B3B3B3  gray
+
+# ── Semantic color assignments ──
+COLOR_ORIENTATION <- paste0(SET2["pink"])   # forward/reverse bars
+COLOR_INSULATOR   <- SET2["orange"]         # synthetic insulator
+
+
+# ── Consolidated palettes (v9) ────────────────────────────────────────────────
+# Every static color palette used downstream lives here. Data-derived color
+# maps (e.g. part_color_map built from slot_shap_data) stay where they're
+# computed.
+
+# Sequential teal ramp for the five e-NMU regions, anchored so the Set2 teal
+# base lands exactly at step 3 (e-NMU(iii)).
+# Knobs:
+#   ENMU_LIGHT / ENMU_DARK widen or narrow the ramp endpoints.
+#   ENMU_OVERRIDES nudges any individual step — set to a hex to override.
+ENMU_LIGHT <- "#DCEFE7"   # e-NMU(i) target before overrides
+ENMU_BASE  <- "#66C2A5"   # Set2 teal — fixed at step 3 (e-NMU(iii))
+ENMU_DARK  <- "#0A4A33"   # e-NMU(v) target before overrides
+enmu_palette <- colorRampPalette(c(ENMU_LIGHT, ENMU_BASE, ENMU_DARK))(5)
+# Per-step overrides. Order: i, ii, iii, iv, v. NA = keep the ramp value.
+ENMU_OVERRIDES <- c(NA, NA, NA, NA, NA)
+
+enmu_palette   <- ifelse(is.na(ENMU_OVERRIDES), enmu_palette, ENMU_OVERRIDES)
+
+
+COLOR_IIIF  <- SET2["teal"]    # #66C2A5
+COLOR_OTHER <- "gray"
+COLOR_IVRF <- enmu_palette[4]   
+
+
+# Sequential blue ramp for the five Ctrl (dinuc-shuffled) regions, anchored
+# so the Set2 lavender base lands exactly at step 3 (Ctrl(iii)). Dark end is
+# pulled toward navy to keep the ramp reading as blue, not purple.
+# Knobs:
+#   CTRL_LIGHT / CTRL_DARK widen or narrow the ramp endpoints.
+#   CTRL_OVERRIDES nudges any individual step — set to a hex to override.
+CTRL_LIGHT <- "#E5EAF4"   # Ctrl(i) target before overrides
+CTRL_BASE  <- "#8DA0CB"   # Set2 lavender — fixed at step 3 (Ctrl(iii))
+CTRL_DARK  <- "#1F2C5C"   # Ctrl(v) target before overrides
+ctrl_palette <- colorRampPalette(c(CTRL_LIGHT, CTRL_BASE, CTRL_DARK))(5)
+# Per-step overrides. Order: i, ii, iii, iv, v. NA = keep the ramp value.
+CTRL_OVERRIDES <- c(NA, NA, NA, NA, NA)
+
+ctrl_palette   <- ifelse(is.na(CTRL_OVERRIDES), ctrl_palette, CTRL_OVERRIDES)
+
+# 11-entry map keyed by raw insert_type strings — used by the Fig S1c
+# stacked-bar plot (enmu_palette / ctrl_palette feed it).
+color_map_detail <- c(
+  synthetic_insulator       = unname(COLOR_INSULATOR),
+  eNMU_region_i             = enmu_palette[1],
+  eNMU_region_ii            = enmu_palette[2],
+  eNMU_region_iii           = enmu_palette[3],
+  eNMU_region_iv            = enmu_palette[4],
+  eNMU_region_v             = enmu_palette[5],
+  dinucleotide_shuffled_i   = ctrl_palette[1],
+  dinucleotide_shuffled_ii  = ctrl_palette[2],
+  dinucleotide_shuffled_iii = ctrl_palette[3],
+  dinucleotide_shuffled_iv  = ctrl_palette[4],
+  dinucleotide_shuffled_v   = ctrl_palette[5]
+)
+
+COLOR_IIIR        <- enmu_palette[3]  
+COLOR_ENMU_OTHER  <- enmu_palette[2]  
+COLOR_CTRL_ALL    <- unname(CTRL_BASE)
+COLOR_INSU_ALL    <- unname(COLOR_INSULATOR)
+
+# Explicit display order for stacked_detail: insulator → e-NMU i–v → Ctrl i–v.
+type_order_types  <- c(
+  "synthetic_insulator",
+  "eNMU_region_i", "eNMU_region_ii", "eNMU_region_iii",
+  "eNMU_region_iv", "eNMU_region_v",
+  "dinucleotide_shuffled_i",   "dinucleotide_shuffled_ii",
+  "dinucleotide_shuffled_iii", "dinucleotide_shuffled_iv",
+  "dinucleotide_shuffled_v"
+)
+type_order_labels <- c(
+  "Insu(i)",
+  "e-NMU(i)", "e-NMU(ii)", "e-NMU(iii)", "e-NMU(iv)", "e-NMU(v)",
+  "Ctrl(i)",  "Ctrl(ii)",  "Ctrl(iii)",  "Ctrl(iv)",  "Ctrl(v)"
+)
+
+# Orientation map (forward / reverse) for BC-level count bars.
+custom_colors <- c("forward"  = COLOR_ORIENTATION,
+                   "reverse"  = paste0(COLOR_ORIENTATION, "99"))
+
+# Label shortener: maps raw feature/insert names to display labels.
+# Used by Fig S1b to relabel the x-axis insert names.
+short_label <- function(name) {
+  name %>%
+    # Extract and reformat slot number to append at end
+    str_replace_all("insert_([1-5])_id_eNMU_region_([ivx]+)", "e-NMU(\\2)-S\\1") %>%
+    str_replace_all("insert_([1-5])_id_dinucleotide_shuffled_([ivx]+)", "Ctrl(\\2)-S\\1") %>%
+    str_replace_all("insert_([1-5])_id_synthetic_insulator", "Insu(i)-S\\1") %>%
+    str_replace_all("insert_([1-5])_id_eNMU_region", "e-NMU-S\\1") %>%   # fallback no numeral
+    str_replace_all("insert_([1-5])_id_dinucleotide_shuffled", "Ctrl-S\\1") %>%  # fallback
+    str_replace_all("insert_([1-5])_ori_reverse", "ori-S\\1") %>%
+    str_replace_all("insert_([1-5])_", "S\\1 ")   # catch-all for anything remaining
+}
+```
+
+## PacBio association data prep
+
+This chunk loads `association_df`, splits `insert_combo` into per-slot columns,
+and computes the BC-level `table2_bc_counts` and the per-combo `combo_counts`
+used downstream by count histogram and forward/reverse barplot.
+
+```{r pacbio-association-prep}
+######################################
+# Read in data
+######################################
+# Full association df (insert_combo, BC, count)
+association_df = read.table(PACBIO_DATA, header = TRUE,
+  sep = "\t",
+  stringsAsFactors = FALSE
+)
+
+# Minimal association df (BC, insert_combo only - no counts)
+association_minimal <- read.table(PACBIO_MIN,
+  header = TRUE,
+  sep = "\t",
+  stringsAsFactors = FALSE
+)
+
+# Number of unique insert combos
+n_distinct(association_df$insert_combo)
+n_distinct(association_minimal$insert_combo)
+
+
+######################################
+# Split insert_combo into individual columns
+######################################
+
+insert_cols <- c("insert_1", "insert_2", "insert_3", "insert_4", "insert_5")
+
+association_df <- association_df %>%
+  separate(insert_combo, into = insert_cols, sep = ";", remove = FALSE)
+
+######################################
+# Table 1: Number of unique combos containing each insert (construct level)
+######################################
+
+table1_construct_combos <- lapply(insert_cols, function(col) {
+  association_df %>%
+    group_by(insert = .data[[col]]) %>%
+    summarise(n_unique_combos = n_distinct(insert_combo), .groups = "drop")
+}) %>%
+  bind_rows() %>%
+  group_by(insert) %>%
+  summarise(n_unique_combos = sum(n_unique_combos), .groups = "drop") %>%
+  mutate(
+    base_name = gsub("_forward|_reverse", "", insert),
+    orientation = case_when(
+      grepl("_forward$", insert) ~ "forward",
+      grepl("_reverse$", insert) ~ "reverse",
+      TRUE ~ "unmapped"
+    )
+  ) %>%
+  arrange(desc(n_unique_combos))
+
+print("Table 1: Unique insert combos per insert (construct level)")
+print(table1_construct_combos)
+
+######################################
+# Table 2: Sum of counts per insert (BC level)
+######################################
+
+table2_bc_counts <- lapply(insert_cols, function(col) {
+  association_df %>%
+    group_by(insert = .data[[col]]) %>%
+    summarise(total_counts = sum(count), .groups = "drop")
+}) %>%
+  bind_rows() %>%
+  group_by(insert) %>%
+  summarise(total_counts = sum(total_counts), .groups = "drop") %>%
+  mutate(
+    base_name = gsub("_forward|_reverse", "", insert),
+    orientation = case_when(
+      grepl("_forward$", insert) ~ "forward",
+      grepl("_reverse$", insert) ~ "reverse",
+      TRUE ~ "unmapped"
+    )
+  ) %>%
+  arrange(desc(total_counts))
+
+print("Table 2: Total read counts per insert (BC level)")
+print(table2_bc_counts)
+
+######################################
+# Table 3: Overall forward vs reverse at construct level
+######################################
+
+table3_orientation_construct <- table1_construct_combos %>%
+  group_by(orientation) %>%
+  summarise(n_unique_combos = sum(n_unique_combos), .groups = "drop") %>%
+  mutate(pct = round(n_unique_combos / sum(n_unique_combos) * 100, 1))
+
+print("Table 3: Overall forward vs reverse at construct level")
+print(table3_orientation_construct)
+
+######################################
+# Table 4: Overall forward vs reverse at BC level
+######################################
+
+table4_orientation_bc <- table2_bc_counts %>%
+  group_by(orientation) %>%
+  summarise(total_counts = sum(total_counts), .groups = "drop") %>%
+  mutate(pct = round(total_counts / sum(total_counts) * 100, 1))
+
+print("Table 4: Overall forward vs reverse at BC level")
+print(table4_orientation_bc)
+
+######################################
+# Fold range of inserts (BC level)
+######################################
+# Sum forward + reverse per base insert
+insert_totals_bc <- table2_bc_counts %>%
+  group_by(base_name) %>%
+  summarise(total_counts = sum(total_counts), .groups = "drop") %>%
+  arrange(desc(total_counts))
+
+print("Insert totals at BC level:")
+print(insert_totals_bc)
+
+# Fold range: highest / lowest
+max_insert <- insert_totals_bc %>% slice_max(total_counts, n = 1)
+min_insert <- insert_totals_bc %>% slice_min(total_counts, n = 1)
+
+fold_range_bc <- max_insert$total_counts / min_insert$total_counts
+
+cat("\nHighest:", max_insert$base_name, "-", max_insert$total_counts, "counts\n")
+cat("Lowest: ", min_insert$base_name, "-", min_insert$total_counts, "counts\n")
+cat("Fold range:", round(fold_range_bc, 2), "\n")
+
+######################################
+# combo_counts: total counts per unique insert combo (used by Fig 1c histogram)
+######################################
+combo_counts <- association_df %>%
+  group_by(insert_combo) %>%
+  summarise(total_counts = sum(count), .groups = "drop")
+
+######################################
+# Calculate how much data within 4 and 10 fold range of median and mean
+######################################
+
+median_count <- median(combo_counts$total_counts)
+mean_count <- mean(combo_counts$total_counts)
+n_total <- nrow(combo_counts)
+
+# 4-fold range (2x either side)
+cat("--- 4-fold range ---\n")
+cat("Around median [", median_count/2, ",", median_count*2, "]\n")
+cat(sum(combo_counts$total_counts >= median_count/2 & combo_counts$total_counts <= median_count*2),
+    "/", n_total, "(", round(mean(combo_counts$total_counts >= median_count/2 & combo_counts$total_counts <= median_count*2)*100, 1), "%)\n")
+
+cat("Around mean [", mean_count/2, ",", mean_count*2, "]\n")
+cat(sum(combo_counts$total_counts >= mean_count/2 & combo_counts$total_counts <= mean_count*2),
+    "/", n_total, "(", round(mean(combo_counts$total_counts >= mean_count/2 & combo_counts$total_counts <= mean_count*2)*100, 1), "%)\n")
+
+# 10-fold range (sqrt(10) either side on log scale)
+cat("\n--- 10-fold range ---\n")
+cat("Around median [", median_count/sqrt(10), ",", median_count*sqrt(10), "]\n")
+cat(sum(combo_counts$total_counts >= median_count/sqrt(10) & combo_counts$total_counts <= median_count*sqrt(10)),
+    "/", n_total, "(", round(mean(combo_counts$total_counts >= median_count/sqrt(10) & combo_counts$total_counts <= median_count*sqrt(10))*100, 1), "%)\n")
+
+cat("Around mean [", mean_count/sqrt(10), ",", mean_count*sqrt(10), "]\n")
+cat(sum(combo_counts$total_counts >= mean_count/sqrt(10) & combo_counts$total_counts <= mean_count*sqrt(10)),
+    "/", n_total, "(", round(mean(combo_counts$total_counts >= mean_count/sqrt(10) & combo_counts$total_counts <= mean_count*sqrt(10))*100, 1), "%)\n")
+```
+
+## Raw LAMPRA score data 
+```{r load-raw-data}
+df_raw <- read.table(RAW_DATA, header = TRUE,  sep = "\t",
+                     stringsAsFactors = FALSE)
+
+# add pseudocount, log transform
+df <- df_raw %>%
+  mutate(
+    S5 = case_when(
+      insert_5 == "eNMU_region_iii_forward" ~ "e-NMU(iii)F",
+      insert_5 == "eNMU_region_iv_reverse"  ~ "e-NMU(iv)R",
+      TRUE                                  ~ "Other"
+    ),
+    RepA_log05 = log10(RepA + 0.05),
+    RepB_log05 = log10(RepB + 0.05),
+    RepC_log05 = log10(RepC + 0.05),
+    avg_Rep_log05 = log10(avg_Rep + 0.05)
+  )
+
+# Mean with log score ->
+df %>%
+  group_by(S5) %>%
+  summarise(mean_activity = mean(avg_Rep_log05, na.rm = TRUE),
+            se = sd(avg_Rep_log05, na.rm = TRUE) / sqrt(n()),
+            n = n())
+
+# REPORTED ACTIVITY SCORE MEANS AND RANGES
+df %>%
+  group_by(S5) %>%
+  summarise(mean_activity = mean(avg_Rep, na.rm = TRUE),
+            sd = sd(avg_Rep, na.rm = TRUE),
+            se = sd(avg_Rep, na.rm = TRUE) / sqrt(n()),
+            n = n(),
+            min = min(avg_Rep, na.rm = TRUE),
+            max = max(avg_Rep, na.rm = TRUE))
+```
+
+# Figure 1
+## Fig 1c
+```{r fig1c-combo-uniformity}
+log_breaks <- 10^seq(0, 3.1, length.out = 51)
+
+plt_combo_uniformity <- ggplot(combo_counts, aes(x = total_counts)) +
+  stat_bin(geom = "step", breaks = log_breaks, color = "black", linewidth = 0.5) +
+  log_scale("x", breaks = 10^(0:4), limits = c(1, 10^4)) +
+  annotation_logticks(sides = "b", size = 0.3) +
+  scale_y_continuous(limits = c(0, 3000), breaks = c(0, 1000, 2000, 3000)) +
+  labs(
+    x = "Reads per sCRL",
+    y = "Number of sCRLs"
+  )
+print(plt_combo_uniformity)
+
+# Export for publication
+save_fig("fig1c_insert_combo_uniformity", plt_combo_uniformity, panel_height = PANEL_H * 0.9, panel_width = PANEL_W * 0.9 )
+```
+
+## Fig 1d
+```{r}
+df <- df %>%
+  mutate(
+    S5 = case_when(
+      insert_5 == "eNMU_region_iii_forward" ~ "e-NMU(iii)F",
+      insert_5 == "eNMU_region_iii_reverse" ~ "e-NMU(iii)R",
+      insert_5 == "eNMU_region_iv_reverse"  ~ "e-NMU(iv)R",
+      TRUE                                  ~ "All other"
+    ),
+    S5 = factor(S5, levels = c("e-NMU(iii)F", "e-NMU(iii)R", "e-NMU(iv)R", "All other"))
+  )
+
+r2_BC <- cor(
+  df %>% filter(!is.na(RepB_log05), !is.na(RepC_log05)) %>% pull(RepB_log05),
+  df %>% filter(!is.na(RepB_log05), !is.na(RepC_log05)) %>% pull(RepC_log05),
+  method = "pearson"
+)
+
+df_all <- df %>% filter(!is.na(RepB_log05), !is.na(RepC_log05))
+
+set.seed(42)
+df_shuffled <- df_all %>% slice_sample(prop = 1)
+
+r_label <- sprintf('italic(r) ~ "= %.2f"', r2_BC)
+
+base_scales <- list(
+  log_scale("x"),
+  log_scale("y"),
+  annotation_logticks(sides = "bl", size = 0.3),
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted", color = "black"),
+  labs(x = "Replicate 1 activity score", y = "Replicate 2 activity score"),
+  annotate("text", x = 3.5, y = Inf, hjust = 0.5, vjust = 1.5,
+           label = r_label, parse = TRUE, size = ANNOT_SIZE),
+  theme(
+    legend.position      = "bottom",
+    legend.justification = "center",
+    panel.grid.major     = element_blank(),
+    panel.grid.minor     = element_blank()
+  )
+)
+
+plt_rep_scatter_iiiR <- ggplot(df_shuffled,
+       aes(x = RepB + 0.05, y = RepC + 0.05, color = S5,
+           shape = S5, size = S5, alpha = S5, stroke = S5)) +
+  geom_point() +
+  scale_color_manual(
+    values = c(
+      "All other"        = unname(COLOR_OTHER),
+      "e-NMU(iv)R"  = unname(COLOR_IVRF),
+      "e-NMU(iii)F" = unname(COLOR_IIIF),
+      "e-NMU(iii)R" = unname(COLOR_IIIR)
+    ),
+    name = "S5 identity"
+  ) +
+  scale_shape_manual(
+    values = c("All other" = 16, "e-NMU(iv)R" = 16,
+               "e-NMU(iii)F" = 16, "e-NMU(iii)R" = 4),
+    name = "S5 identity"
+  ) +
+  scale_size_manual(
+    values = c("All other" = 0.5, "e-NMU(iv)R" = 0.5,
+               "e-NMU(iii)F" = 0.5, "e-NMU(iii)R" = 0.5),
+    name = "S5 identity"
+  ) +
+  scale_alpha_manual(
+    values = c("All other" = 0.7, "e-NMU(iv)R" = 0.7,
+               "e-NMU(iii)F" = 0.7, "e-NMU(iii)R" = 0.7),
+    name = "S5 identity"
+  ) +
+  scale_discrete_manual("stroke",
+    values = c("All other" = 0.3, "e-NMU(iv)R" = 0.3,
+               "e-NMU(iii)F" = 0.3, "e-NMU(iii)R" = 0.3),
+    name = "S5 identity"
+  ) +
+  guides(
+    color = guide_legend(override.aes = list(size = 1.5), nrow = 2),
+    shape = guide_legend(nrow = 2),
+    alpha = guide_legend(nrow = 2),
+    size  = guide_legend(nrow = 2)
+  ) +
+  base_scales
+
+print(plt_rep_scatter_iiiR)
+save_fig("fig1d_replicate_scatter", plt_rep_scatter_iiiR, 
+         panel_height = PANEL_H * 0.9, panel_width = PANEL_W * 0.9 )
+```
+
+## Fig 1e
+```{r}
+df <- df %>%
+  mutate(S5 = case_when(
+    insert_5 == "eNMU_region_iii_forward"            ~ "e-NMU(iii)F",
+    insert_5 == "eNMU_region_iii_reverse"             ~ "e-NMU(iii)R",
+    insert_5 == "eNMU_region_iv_reverse"              ~ "e-NMU(iv)R",
+    str_detect(insert_5, "^synthetic_insulator")      ~ "Insulator",
+    str_detect(insert_5, "^dinucleotide_shuffled")    ~ "Controls",
+    str_detect(insert_5, "^eNMU_region")              ~ "Other e-NMU",
+    TRUE                                               ~ "Other"
+  ),
+  S5 = factor(S5, levels = c("e-NMU(iii)F", "e-NMU(iii)R", "e-NMU(iv)R",
+                              "Other e-NMU", "Controls", "Insulator", "Other")))
+
+
+# Compute n per S5 group, build two-line labels: "S5 name\nn = count"
+n_labels <- df %>%
+  count(S5) %>%
+  mutate(label = paste0(S5, "\nn = ", scales::comma(n)))
+
+# Named vector for scale_x_discrete(labels = ...), keyed by factor level
+label_map <- setNames(n_labels$label, n_labels$S5)
+
+p <- ggplot(df, aes(x = S5, y = avg_Rep + 0.05, fill = S5)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, aes(fill = S5), outlier.shape = NA) +
+  scale_fill_manual(values = c(
+    "e-NMU(iii)F" = unname(COLOR_IIIF),
+    "e-NMU(iii)R" = unname(COLOR_IIIR),
+    "e-NMU(iv)R"  = unname(COLOR_IVRF),
+    "Other e-NMU" = COLOR_ENMU_OTHER,
+    "Controls"    = COLOR_CTRL_ALL,
+    "Insulator"   = COLOR_INSU_ALL,
+    "Other"        = unname(COLOR_OTHER)
+  )) +
+  scale_x_discrete(labels = label_map) +
+  log_scale("y", expand = expansion(mult = c(0.05, 0.25)), breaks = 10^(-2:4)) +
+  annotation_logticks(sides = "l", size = 0.3) +
+  labs(
+    x = "S5 identity",
+    y = "Activity score"
+  ) +
+  theme(
+    legend.position  = "none",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x      = element_text(angle = 45, hjust = 1, vjust = 1, margin = margin(t = 2))
+  )
+
+save_fig("fig1e_MPRA_score_violin", p, panel_height = PANEL_H * 0.9, panel_width = PANEL_W * 1.3)
+print(p)
+```
+
+
+# Figure S1
+## Fig S1b
+```{r figS1b-insert-counts-bc-level}
+# Prepare plot data from table2_bc_counts (computed in pacbio-association-prep)
+plot_data_bc <- table2_bc_counts %>%
+  group_by(base_name, orientation) %>%
+  summarise(total_counts = sum(total_counts), .groups = "drop") %>%
+  pivot_wider(names_from = orientation, values_from = total_counts, values_fill = 0) %>%
+  mutate(Total = rowSums(across(where(is.numeric)))) %>%
+  arrange(desc(Total)) %>%
+  dplyr::select(-Total)
+
+# Convert to long format
+plot_long_bc <- plot_data_bc %>%
+  pivot_longer(cols = -base_name, names_to = "Orientation", values_to = "Count")
+
+# Plot MODIFIED THIS TO ADJUST THE NAMES USING SHORT_LABEL()
+insert_order_labels <- c("Insu(i)",
+  "e-NMU(i)", "e-NMU(ii)", "e-NMU(iii)", "e-NMU(iv)", "e-NMU(v)",
+  "Ctrl(i)",  "Ctrl(ii)",  "Ctrl(iii)",  "Ctrl(iv)",  "Ctrl(v)")
+
+plt_insert_counts_bc <- plot_long_bc %>%
+  mutate(insert_label = short_label(paste0("insert_1_id_", base_name)) %>%
+           str_remove("-S\\d+$"),
+         insert_label = factor(insert_label, levels = insert_order_labels)) %>%
+  ggplot(aes(x = insert_label, y = Count, fill = Orientation)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = custom_colors) +
+  scale_y_continuous(
+    limits = c(0, 5e6),
+    breaks = c(0, 1e6, 2e6, 3e6, 4e6, 5e6),
+    labels = c("0", expression(1%*%10^6), expression(2%*%10^6),
+               expression(3%*%10^6), expression(4%*%10^6), expression(5%*%10^6))
+  ) +
+  labs(x = "Element", y = "# of reads", fill = "Orientation") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1,
+                                   margin = margin(t = 2)),
+                legend.text  = element_text(size = 9), 
+                 legend.title = element_text(size = 9))  
+
+print(plt_insert_counts_bc)
+
+save_fig("figS1b_insert_counts_bc_level", plt_insert_counts_bc,
+  panel_height = PANEL_H * 0.9, panel_width = PANEL_W * 1.1)
+```
+
+## Fig S1c
+```{r figS1c-stacked-detail}
+
+SLOTS <- 1:5
+association_df_filter <- association_df %>% dplyr::select(!insert_combo)
+
+# ── Build detail data ─────────────────────────────────────────────────────────
+slot_element_detail <- map_dfr(SLOTS, function(s) {
+  col <- paste0("insert_", s)
+  if (!col %in% names(association_df_filter)) return(NULL)
+  tibble(slot = s,
+         element_value = association_df_filter[[col]],
+         count = association_df_filter$count) %>%
+    mutate(insert_type = str_remove(element_value, "_(forward|reverse)$"))
+}) %>%
+  group_by(slot, insert_type) %>%
+  summarise(n_present = sum(count), .groups = "drop") %>%
+  group_by(slot) %>%
+  mutate(
+    pct         = n_present / sum(n_present) * 100,
+    fill_color  = coalesce(color_map_detail[insert_type], "#AAAAAA"),
+    insert_label = factor(
+      type_order_labels[match(insert_type, type_order_types)],
+      levels = type_order_labels
+    )
+  ) %>%
+  filter(!is.na(insert_label))   # drop any unmapped types
+
+# Legend built from type_order directly so all 11 types always appear,
+# even if absent from this particular dataset
+legend_df <- tibble(
+  insert_type  = type_order_types,
+  insert_label = factor(type_order_labels, levels = type_order_labels),
+  fill_color   = color_map_detail[type_order_types]
+)
+
+# ── Plot ──────────────────────────────────────────────────────────────────────
+p_stacked_detail <- ggplot(slot_element_detail,
+                           aes(x = factor(slot), y = pct,
+                               fill = fill_color,
+                               group = insert_label)) +
+  geom_col(width = 0.6, color = "white", linewidth = 0.3) +
+  scale_x_discrete(labels = c("1" = "S1", "2" = "S2", "3" = "S3", "4" = "S4", "5" = "S5")) +
+  scale_fill_identity(
+    guide  = "legend", name = NULL,
+    breaks = legend_df$fill_color,
+    labels = as.character(legend_df$insert_label)
+  ) +
+  labs(x = "Slot", y = "% of reads") +
+  theme(
+    legend.position  = "right",
+    legend.text      = element_text(size = 9),
+    axis.title.x     = element_text(margin = margin(t = 7))  # adjust t as needed
+  )
+
+p_stacked_detail
+save_fig("figS1c_stacked_detail", p_stacked_detail, panel_height = PANEL_H * 0.9, panel_width = PANEL_W * 1.1)
+```
+
+## Fig S1d
+```{r}
+# ── All-22-insert violin, sorted by mean activity (descending), no n= labels ──
+df <- df %>%
+  mutate(
+    insert_type_S5 = str_remove(insert_5, "_(forward|reverse)$"),
+    orientation_S5 = case_when(
+      str_detect(insert_5, "_forward$") ~ "F",
+      str_detect(insert_5, "_reverse$") ~ "R",
+      TRUE ~ NA_character_
+    ),
+    base_label_S5  = type_order_labels[match(insert_type_S5, type_order_types)],
+    S5_all         = paste0(base_label_S5, orientation_S5)
+  ) %>%
+  filter(!is.na(S5_all))
+
+# Order levels left -> right by descending mean log-activity
+S5_order <- df %>%
+  group_by(S5_all) %>%
+  summarise(mean_act = mean(avg_Rep_log05, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(mean_act)) %>%
+  pull(S5_all)
+
+df <- df %>%
+  mutate(S5_all = factor(S5_all, levels = S5_order))
+
+# One color per base type (i-v / Ctrl i-v / Insu), shared across F and R
+fill_map_base <- setNames(color_map_detail[type_order_types], type_order_labels)
+fill_vals_all <- setNames(
+  fill_map_base[sub("[FR]$", "", S5_order)],
+  S5_order
+)
+
+p_all22 <- ggplot(df, aes(x = S5_all, y = avg_Rep + 0.05, fill = S5_all)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, aes(fill = S5_all), outlier.shape = NA) +
+  scale_fill_manual(values = fill_vals_all) +
+  log_scale("y", expand = expansion(mult = c(0.05, 0.25)), breaks = 10^(-2:4)) +
+  annotation_logticks(sides = "l", size = 0.3) +
+  labs(
+    x = "S5 identity",
+    y = "Activity score"
+  ) +
+  theme(
+    legend.position  = "none",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x      = element_text(angle = 45, hjust = 1, vjust = 1, margin = margin(t = 2))
+  )
+
+print(p_all22)
+save_fig("figS1d_all22_insert_violin", p_all22, panel_height = PANEL_H * 0.9, panel_width = PANEL_W * 3.4)
+```

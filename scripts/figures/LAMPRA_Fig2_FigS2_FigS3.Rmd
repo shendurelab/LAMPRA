@@ -1,0 +1,1999 @@
+---
+title: "LAMPRA Paper Figures — Fig2 & FigS2 & FigS3"
+author: "cbiar"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: show
+    fig_width: 10
+    fig_height: 10
+  pdf_document:
+    toc: true
+    toc_depth: '3'
+editor_options:
+  chunk_output_type: console
+---
+
+<!--
+OVERVIEW
+========
+  Fig 2a - LAMPRA activity as a function of upstream enhancer #
+  Fig 2b - LAMPRA activity per element copy number
+  Fig 2c - Relative positional activity of e-NMU(iii), (iv), and Insu(i)
+  Fig 2d - Bar plot of LAMPRA activity for upstream vs. downstream Insu(i)
+  Fig 2e - Bar plot of LAMPRA activity for upstream vs. downstream Insu(i) for all sCRL architectures
+  Fig 2f - Bar chart of Pearson r scores for all models
+  Fig 2g - Scatterplot of random forest predicted vs. actual activity
+  Fig 2h - Downsampling analysis curve
+  
+  Fig S2a - Violin plot of LAMPRA activity as a function of upstream enhancer #
+  Fig S2b - LAMPRA activity per element copy number for active and inactive elements
+  Fig S2c - Orientation sensitivity (Forward − Reverse) by slot
+  Fig S2d - Scatterplot of mean LAMPRA score by slot and orientation
+
+  Fig S3a - Violin plot of LAMPRA activity by insulator copy number
+  Fig S3b - Violin plot of LAMPRA activity for upstream vs. downstream Insu(i)
+  Fig S3c - Violin plot of LAMPRA activity for upstream vs. downstream Insu(i) for all sCRL architectures
+  Fig S3d - Scatterplot of mean LAMPRA score by slot and orientation for Insu(i) only
+
+DEPENDENCIES (CRAN)
+  tidyverse, scales, RColorBrewer, cowplot, sysfonts, showtext, here.
+  Font: macOS Arial paths used — edit font_add() for Linux/Windows.
+-->
+
+```{r setup, include=FALSE}
+FIG_DIR <- file.path(here::here(), "figures-fig2-figS2-figS3")
+dir.create(FIG_DIR, recursive = TRUE, showWarnings = FALSE)
+
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width  = 10,
+  fig.height = 10,
+  dpi  = 150,
+  dev  = c("pdf", "png"),
+  fig.path = paste0(FIG_DIR, "/")
+)
+```
+
+# Setup
+
+## Libraries
+
+```{r libraries}
+library(tidyverse)  
+library(scales)       
+library(RColorBrewer) 
+library(cowplot)      
+library(sysfonts)     
+library(showtext)     
+library(egg)          
+library(gtable)
+library(grid)
+library(ggbeeswarm)
+```
+
+## Font & Theme
+
+```{r font-theme}
+# macOS Arial paths. On Linux/Windows point font_add() at a local .ttf,
+# or remove this block entirely — plots fall back to the device default font.
+font_add("Arial", regular    = "/Library/Fonts/Arial.ttf",
+                  bold       = "/Library/Fonts/Arial Bold.ttf",
+                  italic     = "/Library/Fonts/Arial Italic.ttf",
+                  bolditalic = "/Library/Fonts/Arial Bold Italic.ttf")
+showtext_auto()
+
+FONT <- "Arial"
+
+# ── Publication theme ─────────────────────────────────────────────────────────
+pub_theme <- function() {
+  theme_cowplot(font_size = 8) %+replace%
+    theme(
+      strip.background   = element_rect(color = "black", fill = "grey90",
+                                        linetype = "solid", linewidth = 0.25),
+      text               = element_text(size = 8, family = FONT),
+      axis.text.x        = element_text(size = 8),
+      axis.text.y        = element_text(size = 8, hjust = 1,
+                                        margin = margin(r = 2)),
+      axis.title.x      = element_text(size = 9, margin = margin(t = -1)),
+      axis.title.y      = element_text(size = 9, angle = 90, margin = margin(r = -1)),
+      axis.line          = element_line(linewidth = 0.25),
+      strip.text         = element_text(family = FONT, size = 8, face = "bold",
+                                        margin = margin(b = 2.5, t = 2.5)),
+      legend.text        = element_text(size = 8),
+      legend.title       = element_text(size = 8),
+      legend.position    = "right",
+      legend.title.align = 0.5,
+      plot.tag           = element_text(size = 14, face = "bold"),
+      plot.title         = element_text(hjust = 0.5, face = "plain", size = 12,
+                                        margin = margin(b = 10))
+    )
+}
+theme_set(pub_theme())
+
+# ── Panel dimension constants ─────────────────────────────────────────────────
+# NOTE: these are per-PANEL sizes (the plotting area), not total figure size —
+# save_fig() uses egg::set_panel_size() so panel width/height stays identical
+# across figures regardless of legend/label footprint.
+PANEL_W      <- unit(2.3, "in")
+PANEL_H      <- unit(2.3, "in")
+PANEL_H      <- PANEL_H * 0.9
+
+ANNOT_SIZE <- 8 / .pt   # matches theme's 10pt in ggplot2 size units
+
+# Single accent color for the learning curves (Set2 teal — "e-NMU(iii)F").
+COLOR_LINE <- "black"
+
+# ── save_fig() ────────────────────────────────────────────────────────────────
+# Writes to FIG_DIR via quartz's native PDF device (real embedded Arial text,
+# not showtext-outlined paths — this is what keeps text selectable/editable
+# as whole words in Illustrator).
+#
+# Backward-compatible: existing calls using width=/height= (old ggsave-style,
+# total figure inches) still work — they're mapped to panel_width/panel_height.
+save_fig <- function(name, plot = last_plot(),
+                     width = NULL, height = NULL,
+                     panel_width  = width  %||% PANEL_W,
+                     panel_height = height %||% PANEL_H,
+                     dpi = 300, ext = "pdf", ...) {
+  fpath <- file.path(FIG_DIR, paste0(name, ".", ext))
+
+  if (!inherits(panel_width,  "unit")) panel_width  <- unit(panel_width,  "in")
+  if (!inherits(panel_height, "unit")) panel_height <- unit(panel_height, "in")
+
+  sized   <- egg::set_panel_size(plot, width = panel_width, height = panel_height)
+  total_w <- grid::convertWidth( gtable::gtable_width(sized),  "in", valueOnly = TRUE)
+  total_h <- grid::convertHeight(gtable::gtable_height(sized), "in", valueOnly = TRUE)
+
+  if (ext == "pdf") {
+    quartz(type = "pdf", file = fpath,
+           width = total_w, height = total_h, family = "Arial")
+    grid::grid.draw(sized)
+    dev.off()
+  } else if (ext == "png") {
+    quartz(type = "png", file = fpath,
+           width = total_w * dpi, height = total_h * dpi, family = "Arial")
+    grid::grid.draw(sized)
+    dev.off()
+  }
+
+  if (file.exists(fpath) && file.size(fpath) > 0) {
+    message(sprintf("Saved: %s  [%.2f × %.2f in]", fpath, total_w, total_h))
+  } else {
+    warning(sprintf("FAILED to write: %s", fpath))
+  }
+  invisible(fpath)
+}
+
+# ── r2_score() ────────────────────────────────────────────────────────────────
+# coefficient of determination - sklearn-compatible R² = 1 − SS_res / SS_tot. Can be negative for subsets.
+r2_score <- function(actual, predicted) {
+  ss_res <- sum((actual - predicted)^2)
+  ss_tot <- sum((actual - mean(actual))^2)
+  if (ss_tot == 0) return(NA_real_)
+  1 - ss_res / ss_tot
+}
+```
+
+## Input Paths
+
+| Variable       | File                                                        
+|----------------|-------------------------------------------------------------
+| `RAW_DATA`     | `data/raw/v2_longMPRA_scores_with_orientation_20260127.txt` 
+| `RFXGB_FULL`   | `data/categorical/full_processed_categorical.csv`           
+| `HOLDOUT_EVAL` | `data/categorical/holdout_eval_combined.csv`               
+| `DOWNSAMPLE`   | `data/categorical/downsampling_metrics.csv`                 
+
+```{r input-paths}
+PROJECT <- here::here()
+
+RAW_DATA <- file.path(PROJECT,
+  "data/raw/v2_longMPRA_scores_with_orientation_20260127.txt")
+
+RFXGB_FULL <- file.path(PROJECT,
+  "data/categorical/full_processed_categorical.csv")
+
+HOLDOUT_EVAL <- file.path(PROJECT,
+  "data/categorical/holdout_eval_combined.csv")
+
+DOWNSAMPLE <- file.path(PROJECT,
+  "data/categorical/downsampling_metrics.csv")
+```
+
+## Categorical Code → Label Maps
+
+`full_processed_categorical.csv` stores element identities as integers
+(sklearn label-encoded, alphabetical order). `decode_categorical_codes()`
+converts those integers back to string labels in place.
+
+```{r categorical-decode}
+# sklearn alphabetical order of the 11 insert identities → integer code
+ID_CODE_MAP <- c(
+  "0"  = "dinucleotide_shuffled_i",
+  "1"  = "dinucleotide_shuffled_ii",
+  "2"  = "dinucleotide_shuffled_iii",
+  "3"  = "dinucleotide_shuffled_iv",
+  "4"  = "dinucleotide_shuffled_v",
+  "5"  = "eNMU_region_i",
+  "6"  = "eNMU_region_ii",
+  "7"  = "eNMU_region_iii",
+  "8"  = "eNMU_region_iv",
+  "9"  = "eNMU_region_v",
+  "10" = "synthetic_insulator"
+)
+ORI_CODE_MAP <- c("0" = "forward", "1" = "reverse")
+
+decode_categorical_codes <- function(df, slots = 1:5) {
+  for (s in slots) {
+    id_code  <- paste0("insert_", s, "_id_code")
+    ori_code <- paste0("insert_", s, "_ori_code")
+    if (id_code  %in% names(df))
+      df[[paste0("insert_", s, "_id")]]  <-
+        unname(ID_CODE_MAP[as.character(df[[id_code]])])
+    if (ori_code %in% names(df))
+      df[[paste0("insert_", s, "_ori")]] <-
+        unname(ORI_CODE_MAP[as.character(df[[ori_code]])])
+  }
+  df
+}
+```
+
+## Color Palette
+
+```{r colors}
+# RColorBrewer Set2 (8 colors) with semantic names
+SET2 <- brewer.pal(8, "Set2")
+names(SET2) <- c("teal", "orange", "lavender", "pink",
+                 "yellow_green", "yellow", "tan", "gray")
+
+COLOR_INSULATOR    <- SET2["orange"]
+COLOR_DINUC_SHUF   <- SET2["lavender"]
+COLOR_ENMU_GENERIC <- SET2["teal"]
+COLOR_FALLBACK     <- "#000000"
+COLOR_IIIF         <- SET2["teal"]
+COLOR_OTHER        <- "gray"
+
+# e-NMU ramp: light teal → Set2 teal (e-NMU(iii) anchor) → dark teal
+ENMU_LIGHT <- "#DCEFE7"; ENMU_BASE <- "#66C2A5"; ENMU_DARK <- "#0A4A33"
+enmu_palette <- colorRampPalette(c(ENMU_LIGHT, ENMU_BASE, ENMU_DARK))(5)
+ENMU_OVERRIDES <- c(NA, NA, NA, NA, NA)
+enmu_palette   <- ifelse(is.na(ENMU_OVERRIDES), enmu_palette, ENMU_OVERRIDES)
+
+# Ctrl ramp: light lavender → Set2 lavender (Ctrl(iii) anchor) → navy
+CTRL_LIGHT <- "#E5EAF4"; CTRL_BASE <- "#8DA0CB"; CTRL_DARK <- "#1F2C5C"
+ctrl_palette <- colorRampPalette(c(CTRL_LIGHT, CTRL_BASE, CTRL_DARK))(5)
+CTRL_OVERRIDES <- c(NA, NA, NA, NA, NA)
+ctrl_palette   <- ifelse(is.na(CTRL_OVERRIDES), ctrl_palette, CTRL_OVERRIDES)
+
+# Named color map for all 11 element types
+elem_colors <- c(
+  setNames(enmu_palette, c("e-NMU(i)","e-NMU(ii)","e-NMU(iii)","e-NMU(iv)","e-NMU(v)")),
+  setNames(ctrl_palette, c("Ctrl(i)", "Ctrl(ii)", "Ctrl(iii)", "Ctrl(iv)", "Ctrl(v)")),
+  c("Insu(i)" = unname(COLOR_INSULATOR))
+)
+
+# Relative-activity plots exclude Ctrl from the line colors
+# (Ctrl is the baseline denominator, not a plotted line).
+elem_colors_rel <- elem_colors[!grepl("^Ctrl\\(", names(elem_colors))]
+
+get_part_color <- function(name) {
+  case_when(
+    str_detect(name, "dinucleotide_shuffled")   ~ unname(COLOR_DINUC_SHUF),
+    str_detect(name, "synthetic_insulator")     ~ unname(COLOR_INSULATOR),
+    TRUE                                        ~ unname(COLOR_FALLBACK)
+  )
+}
+```
+
+---
+
+# Data Loading
+
+## Raw LAMPRA scores
+```{r load-raw-data}
+df_raw <- read.table(RAW_DATA, header = TRUE, sep = "\t",
+                     stringsAsFactors = FALSE)
+
+df <- df_raw %>%
+  mutate(
+    # S5 label used to stratify Fig 2a and highlight the iiiF subset.
+    S5 = if_else(insert_5 == "eNMU_region_iii_forward", "e-NMU(iii)F", "Other"),
+    # Pseudocount 0.05 shifts the distribution away from zero before logging.
+    # It is used only for visualisation / log transforms; raw avg_Rep is used
+    # for all model inputs and metrics.
+    avg_Rep_log05 = log10(avg_Rep + 0.05)
+  )
+
+cat(nrow(df), "constructs loaded.\n")
+cat("S5 breakdown:\n"); print(table(df$S5))
+```
+
+## Build ori_long
+`ori_long` pivots the five slot columns into long format: one row per
+(construct × slot). Each row carries the element identity, orientation, raw
+score, and log score for that slot. 
+```{r build-ori-long}
+ori_long <- map_dfr(1:5, function(s) {
+  df %>%
+    transmute(
+      slot          = s,
+      element_id    = .data[[paste0("insert_", s, "_id")]],
+      orientation   = .data[[paste0("insert_", s, "_ori")]],
+      avg_Rep       = avg_Rep,           # raw score — alt orientation plots
+      avg_Rep_log05 = avg_Rep_log05      # log10(avg_Rep + 0.05)
+    )
+}) %>%
+  filter(!is.na(avg_Rep_log05)) %>%
+  mutate(
+    # Convert raw element IDs to publication display labels.
+    element_label = element_id %>%
+      str_replace_all("eNMU_region_([ivx]+)",           "e-NMU(\\1)") %>%
+      str_replace_all("dinucleotide_shuffled_([ivx]+)", "Ctrl(\\1)")   %>%
+      str_replace_all("synthetic_insulator",             "Insu(i)")
+  )
+
+cat(nrow(ori_long), "element × construct × slot rows in ori_long.\n")
+```
+
+## Load categorical feature matrix
+```{r load-rfxgb-full}
+# full_processed_categorical.csv: one row per construct.
+# Element identities are integer-coded (sklearn label encoding).
+# decode_categorical_codes() appends string _id and _ori columns.
+rfxgb_full <- read_csv(RFXGB_FULL, show_col_types = FALSE) %>%
+  decode_categorical_codes()
+
+cat(nrow(rfxgb_full), "rows in rfxgb_full after decoding.\n")
+```
+
+## Build iiiF slot data
+
+### Subset definition
+
+`df_iiiF` contains all constructs where **slot 5 = e-NMU(iii) forward** (n ≈ 1,665). 
+
+### How `build_elements_long` works
+
+For each of the 11 element types and each of the 4 variable slots, we pull
+every iiiF construct that has that element at that slot. The resulting long
+table has one row per (element type, slot, construct).
+
+### Geometric mean
+### log2 FC = log₂(geomean_A / geomean_Ctrl)
+
+```
+delta_log = mean_log_elem − mean_log_ctrl
+          = log10( geomean_A ) − log10( geomean_Ctrl )
+          = log10( geomean_A / geomean_Ctrl )
+```
+
+```
+log2_fc = delta_log / log10(2)
+        = log10( geomean_A / geomean_Ctrl ) / log10(2)
+        = log2( geomean_A / geomean_Ctrl )
+```
+
+```{r build-iiiF-slot-data}
+# ── iiiF-S5 subset ────────────────────────────────────────────────────────────
+df_iiiF <- df %>% filter(S5 == "e-NMU(iii)F")
+cat(nrow(df_iiiF), "constructs in iiiF subset.\n")
+
+# Lookup table: all 11 element types with publication labels and family.
+elements_11 <- tribble(
+  ~element_id,                  ~element_label,  ~family,
+  "eNMU_region_i",              "e-NMU(i)",      "e-NMU",
+  "eNMU_region_ii",             "e-NMU(ii)",     "e-NMU",
+  "eNMU_region_iii",            "e-NMU(iii)",    "e-NMU",
+  "eNMU_region_iv",             "e-NMU(iv)",     "e-NMU",
+  "eNMU_region_v",              "e-NMU(v)",      "e-NMU",
+  "dinucleotide_shuffled_i",    "Ctrl(i)",        "Ctrl",
+  "dinucleotide_shuffled_ii",   "Ctrl(ii)",       "Ctrl",
+  "dinucleotide_shuffled_iii",  "Ctrl(iii)",      "Ctrl",
+  "dinucleotide_shuffled_iv",   "Ctrl(iv)",       "Ctrl",
+  "dinucleotide_shuffled_v",    "Ctrl(v)",        "Ctrl",
+  "synthetic_insulator",        "Insu(i)",        "Insu"
+)
+
+# ── build_elements_long() ─────────────────────────────────────────────────────
+# For each (element_type × slot S1–S4), find every construct in df_base that
+# has that element at that slot. Returns a long table with one row per
+# (construct, element, slot) — the denominator for all per-slot summaries.
+# Note: constructs appear multiple times if they carry multiple element types,
+# but each (element, slot) analysis is independent (other slots are free).
+build_elements_long <- function(df_base) {
+  map_dfr(seq_len(nrow(elements_11)), function(i) {
+    elem <- elements_11$element_id[i]
+    lbl  <- elements_11$element_label[i]
+    fam  <- elements_11$family[i]
+    map_dfr(1:4, function(s) {
+      col <- paste0("insert_", s, "_id")
+      df_base %>%
+        filter(.data[[col]] == elem) %>%
+        transmute(slot = s, element = lbl, family = fam, avg_Rep)
+    })
+  }) %>%
+    mutate(
+      element = factor(element, levels = elements_11$element_label),
+      family  = factor(family,  levels = c("e-NMU", "Ctrl", "Insu"))
+    )
+}
+
+# ── build_relative_summary() ──────────────────────────────────────────────────
+# Computes, for each non-Ctrl element at each slot:
+#   log2_fc = log2( geomean(element activity) / geomean(Ctrl-pool activity) )
+#
+# Steps (matching the algebra above):
+#   1. For each slot, pool ALL Ctrl constructs (all five Ctrl variants combined)
+#      → mean_log_ctrl  = log10(geomean of Ctrl-pool at that slot)
+#   2. For each (element, slot), average log10 activity of constructs bearing
+#      that element at that slot
+#      → mean_log_elem  = log10(geomean of element A at that slot)
+#   3. delta_log = mean_log_elem − mean_log_ctrl
+#              = log10(geomean_A / geomean_Ctrl)
+#   4. log2_fc  = delta_log / log10(2) = log2(geomean_A / geomean_Ctrl)
+#   5. Error:   se_delta = sqrt(se_elem² + se_ctrl²)   [independent groups]
+#              ci95     = 1.96 × se_delta              [large-sample 95% CI]
+build_relative_summary <- function(elements_long) {
+  elements_log <- elements_long %>%
+    mutate(log_act = log10(avg_Rep + 0.05))
+
+  # Step 1 — Ctrl-pool mean per slot (all five Ctrl variants pooled together)
+  ctrl_baseline <- elements_log %>%
+    filter(family == "Ctrl") %>%
+    group_by(slot) %>%
+    summarise(
+      mean_log_ctrl = mean(log_act),        # = log10(geomean_Ctrl at this slot)
+      se_log_ctrl   = sd(log_act) / sqrt(n()),
+      n_ctrl        = n(),
+      .groups = "drop"
+    )
+
+  # Step 2 — Element mean per (element, slot) for non-Ctrl elements
+  elem_mean_log <- elements_log %>%
+    filter(family != "Ctrl") %>%
+    group_by(family, element, slot) %>%
+    summarise(
+      mean_log_elem = mean(log_act),        # = log10(geomean_elem at this slot)
+      se_log_elem   = sd(log_act) / sqrt(n()),
+      n_elem        = n(),
+      .groups = "drop"
+    )
+
+  # Steps 3–5 — Join and compute log2 FC with 95% CI
+  elem_mean_log %>%
+    inner_join(ctrl_baseline, by = "slot") %>%
+    mutate(
+      delta_log  = mean_log_elem - mean_log_ctrl,   # log10(geomean_A/geomean_Ctrl)
+      se_delta   = sqrt(se_log_elem^2 + se_log_ctrl^2),
+      ci95_delta = se_delta * 1.96,
+      log2_fc    = delta_log / log10(2),            # log2(geomean_A/geomean_Ctrl)
+      log2_lo    = (delta_log - ci95_delta) / log10(2),
+      log2_hi    = (delta_log + ci95_delta) / log10(2)
+    )
+}
+```
+
+## Load model outputs
+```{r load-model-outputs}
+# The combined file stacks two evaluation runs in `data_subset`: the main "full"
+# holdout (5,405 points/model) and a separate auxiliary "iiiF_only" run
+# (250/model). Restrict to "full" so every model is scored on the same canonical
+# holdout; otherwise metrics blend the two runs (5,655/model).
+holdout_df <- read_csv(HOLDOUT_EVAL, show_col_types = FALSE) %>%
+  filter(data_subset == "full") %>%
+  mutate(
+    S5          = if_else(insert_5_id == "eNMU_region_iii" &
+                          insert_5_ori == "forward",
+                          "e-NMU(iii)F", "Other"),
+    model_label = paste0(family, "/", model)
+  )
+
+cat(nrow(holdout_df), "holdout predictions loaded.\n")
+
+# R² and Pearson r per model
+model_r2 <- holdout_df %>%
+  group_by(model_label) %>%
+  summarise(
+    r2         = r2_score(actual_avg_Rep, predicted_avg_Rep),
+    pearson_r  = cor(actual_avg_Rep, predicted_avg_Rep, method = "pearson"),
+    pearson_r2 = pearson_r^2,
+    n          = n(),
+    .groups = "drop"
+  )
+
+model_order <- model_r2 %>% arrange(desc(r2)) %>% pull(model_label)
+best_model  <- model_order[1]
+best_rf     <- model_order[2]
+cat("Best RF model:", best_rf,
+    "| R² =", round(model_r2$r2[model_r2$model_label == best_rf], 3), "\n")
+```
+
+## Load downsampling sweep (50 permutations)
+`downsampling_metrics.csv` holds one row per (model × permutation × training
+fraction).
+We collapse across the 50 permutations to a per-fraction **mean** and a **t-based
+95% confidence interval** (mean ± t·SE, where SE = SD / √n_perm and t is the
+0.975 quantile of Student's t with n_perm − 1 degrees of freedom). The t
+interval — rather than the normal-approximation 1.96·SE. 
+The `pearson_r` column of the resulting table holds
+the mean, so the downstream threshold / smoothing chunks operate on the averaged
+curve.
+
+Two parameters control the panels:
+
+- `downsample_stepsize` — thin the 1%-resolution curve to every X% for the
+  plotted points/line, anchored at 100% and stepping downward. The CI band and
+  the sufficiency threshold are always computed on the full 1% grid.
+- `downsample_model` — which model arm to plot (`"rf"` or `"xgb"`); drives the
+  curve data and the saved-figure filenames. 
+
+```{r load-downsampling}
+downsample_stepsize <- 3
+downsample_model    <- "rf"
+ci_level            <- 0.95   # confidence level for the CI on the per-fraction mean
+
+# Raw per-permutation sweep for the selected model arm.
+downsample_raw <- read_csv(DOWNSAMPLE, show_col_types = FALSE) %>%
+  filter(model == downsample_model)
+
+n_perm <- n_distinct(downsample_raw$replicate)
+cat(sprintf("%d downsampling permutations × %d fractions for model '%s'.\n",
+            n_perm, n_distinct(downsample_raw$fraction), downsample_model))
+
+stopifnot(downsample_model %in% downsample_raw$model)
+
+# Display label for the selected model.
+ds_model_label <- c(rf = "Random forest", xgb = "Gradient boosting")[downsample_model]
+
+# ── Collapse across permutations: per-fraction mean + 95% CI ──────────────────
+# `pearson_r` is kept as the MEAN across permutations so the threshold /
+# smoothing chunks below reuse it unchanged. pct_removed / pct_used give the two
+# complementary x-axis framings (fraction of the full training set removed vs.
+# retained).
+ds_ci_full <- downsample_raw %>%
+  group_by(model, fraction, n_train) %>%
+  summarise(
+    n_rep          = n(),
+    # NOTE: compute SD/SE from the raw per-permutation `pearson_r` BEFORE
+    # overwriting `pearson_r` with its mean (dplyr summarise resolves columns
+    # sequentially, so the mean must be assigned after the SD/SE that need the
+    # raw values).
+    pearson_r_sd   = sd(pearson_r),
+    pearson_r_se   = pearson_r_sd / sqrt(n_rep),
+    pearson_r      = mean(pearson_r),            # mean across permutations
+    # t-based 95% CI on the mean: critical value from Student's t with
+    # (n_rep - 1) df, computed PER FRACTION so it stays correct if any fraction
+    # has fewer permutations. At n_rep = 50 this is t = 2.01 (vs. 1.96 normal).
+    pearson_r_tcrit = qt(1 - (1 - ci_level) / 2, df = n_rep - 1),
+    pearson_r_lo   = pearson_r - pearson_r_tcrit * pearson_r_se,
+    pearson_r_hi   = pearson_r + pearson_r_tcrit * pearson_r_se,
+    pearson_r2     = mean(pearson_r2),
+    r2_coef_determination = mean(r2_coef_determination),
+    .groups = "drop"
+  ) %>%
+  arrange(n_train) %>%
+  mutate(pct_used    = fraction * 100,
+         pct_removed = 100 - fraction * 100)
+
+# Alias used by the threshold / smoothing chunks (per-fraction averaged curve).
+ds_curve_full <- ds_ci_full
+
+# Thinned copy for the plotted points/line (every downsample_stepsize %).
+# round() guards against floating-point drift in fraction (e.g. 0.07*100).
+ds_ci <- ds_ci_full %>%
+  filter((100 - round(fraction * 100)) %% downsample_stepsize == 0)
+
+# Full-data (fraction = 1.0) mean holdout Pearson r — saturation reference.
+ds_full_r2 <- ds_ci_full %>%
+  filter(fraction == 1.0) %>%
+  pull(pearson_r)
+
+cat(ds_model_label, "mean holdout Pearson r: ",
+    sprintf("%.3f @ %d train rows (%.0f%%)  →  %.3f @ %d train rows (full)\n",
+            ds_ci_full$pearson_r[1],
+            ds_ci_full$n_train[1],
+            100 * ds_ci_full$fraction[1],
+            ds_full_r2,
+            max(ds_ci_full$n_train)))
+```
+
+
+# Figure 2
+## Fig 2a 
+```{r}
+id_cols_all  <- paste0("insert_", 1:5, "_id")
+id_cols_s1s4 <- paste0("insert_", 1:4, "_id")
+
+line_data_ivrev <- rfxgb_full %>%
+  mutate(
+    group = case_when(
+      insert_5_id == "eNMU_region_iii" & insert_5_ori == "forward" ~ "e-NMU(iii)F",
+      insert_5_id == "eNMU_region_iii" & insert_5_ori == "reverse" ~ "e-NMU(iii)R",
+      insert_5_id == "eNMU_region_iv"  & insert_5_ori == "reverse" ~ "e-NMU(iv)R",
+      TRUE ~ "minP"
+    ),
+    # iiiF / iiiR / ivR: count enhancers in S1-S4 only (range 0-4)
+    # minP: count enhancers in S1-S5 (range 0-5)
+    total_enmu = if_else(
+      group == "minP",
+      rowSums(across(all_of(id_cols_all),  ~ as.integer(str_detect(.x, "eNMU_region")))),
+      rowSums(across(all_of(id_cols_s1s4), ~ as.integer(str_detect(.x, "eNMU_region"))))
+    )
+  )
+
+# ── print total n per line (group) ────────────────────────────────────────────
+cat("\n── Total constructs per line ──\n")
+print(line_data_ivrev %>% count(group, name = "n_total"))
+
+line_data_ivrev_summary <- line_data_ivrev %>%
+  group_by(group, total_enmu) %>%
+  summarise(
+    mean_rep_log = mean(log10(avg_Rep + 0.05)),
+    se_log       = sd(log10(avg_Rep + 0.05)) / sqrt(n()),
+    ci95_log     = se_log * qt(0.975, n() - 1),
+    n            = n(),
+    .groups      = "drop"
+  )
+
+p_fig2a_iiirev_ivrev <- ggplot(line_data_ivrev_summary,
+                        aes(x = total_enmu, y = 10^mean_rep_log,
+                            color = group, shape = group)) +
+  geom_errorbar(aes(ymin = 10^(mean_rep_log - ci95_log),
+                    ymax = 10^(mean_rep_log + ci95_log)),
+                width = 0.2, alpha = 0.6) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 1.8, stroke = 0.8) +
+  scale_color_manual(
+    values = c(
+      "e-NMU(iii)F" = unname(COLOR_IIIF),
+      "e-NMU(iii)R" = unname(COLOR_IIIF),
+      "e-NMU(iv)R"  = unname(enmu_palette[4]),
+      "minP"        = unname(COLOR_OTHER)
+    )
+  ) +
+  scale_shape_manual(
+    values = c(
+      "e-NMU(iii)F" = 16,
+      "e-NMU(iii)R" = 4,
+      "e-NMU(iv)R"  = 16,
+      "minP"        = 16
+    )
+  ) +
+  scale_y_log10(labels = scales::label_log()) +
+  annotation_logticks(sides = "l", size = 0.3) +
+  labs(
+    x     = "# of enhancers in upstream slots",
+    y     = "Activity score",
+    color = "Promoter group",
+    shape = "Promoter group"
+  ) +
+  theme(
+    axis.title.y     = element_text(hjust = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+print(p_fig2a_iiirev_ivrev)
+save_fig("fig2a_upstream_enh", p_fig2a_iiirev_ivrev, panel_width = PANEL_W, panel_height = PANEL_H)
+```
+
+## Fig 2b
+```{r}
+id_cols_s1s4_only <- paste0("insert_", 1:4, "_id")
+
+elem_copy_map_s1s4 <- c(
+  "eNMU_region_i"       = "e-NMU(i)",
+  "eNMU_region_ii"      = "e-NMU(ii)",
+  "eNMU_region_iii"     = "e-NMU(iii)",
+  "eNMU_region_iv"      = "e-NMU(iv)",
+  "eNMU_region_v"       = "e-NMU(v)",
+  "synthetic_insulator" = "Insu(i)"
+)
+
+cat(sprintf("Total constructs in rfxgb_full (n = %s) used for this panel.\n",
+            scales::comma(nrow(rfxgb_full))))
+
+# ── per-construct copy_n (raw, un-summarised) for each element, S1–S4 only ──
+copy_n_raw_s1s4 <- map_dfr(names(elem_copy_map_s1s4), function(elem_id) {
+  rfxgb_full %>%
+    mutate(copy_n = rowSums(across(all_of(id_cols_s1s4_only), ~ .x == elem_id))) %>%
+    transmute(
+      element_label = elem_copy_map_s1s4[[elem_id]],
+      copy_n,
+      avg_Rep
+    )
+}) %>%
+  mutate(
+    # collapse 3 and 4 into "3+" before summarising, so mean/CI are computed
+    # on the pooled raw data rather than merged from separate bins
+    copy_n_bin = if_else(copy_n >= 3, "3+", as.character(copy_n)),
+    copy_n_bin = factor(copy_n_bin, levels = c("0", "1", "2", "3+"))
+  )
+
+copy_n_data_s1s4 <- copy_n_raw_s1s4 %>%
+  group_by(element_label, copy_n_bin) %>%
+  summarise(
+    mean_log = mean(log10(avg_Rep + 0.05)),
+    se_log   = sd(log10(avg_Rep + 0.05)) / sqrt(n()),
+    ci95_log = se_log * qt(0.975, pmax(n() - 1, 1)),
+    n        = n(),
+    .groups  = "drop"
+  )
+
+copy_n_log_s1s4 <- copy_n_data_s1s4 %>%
+  mutate(element_label = factor(as.character(element_label),
+                                levels = unname(elem_copy_map_s1s4))) %>%
+  filter(element_label != "Insu(i)")   # exclude insulator, matching fig2b
+
+# ── console table: n per datapoint on each line ─────────────────────────────
+cat("\n── n per datapoint (element × copy_n bin), S1–S4 only, 3+ collapsed ──\n")
+print(
+  copy_n_log_s1s4 %>%
+    arrange(element_label, copy_n_bin) %>%
+    select(element_label, copy_n_bin, n),
+  n = Inf
+)
+
+# ── compute y-axis limits from the actual CI bounds so nothing is clipped ───
+y_lo_data <- min(10^(copy_n_log_s1s4$mean_log - copy_n_log_s1s4$ci95_log))
+y_hi_data <- max(10^(copy_n_log_s1s4$mean_log + copy_n_log_s1s4$ci95_log))
+
+# a little multiplicative padding so error bars don't sit flush on the edge
+y_lo_plot <- min(10^-1, y_lo_data / 1.15)
+y_hi_plot <- max(10^1,  y_hi_data * 1.15)
+
+cat(sprintf("\nY-axis range needed to fit all CI bounds: %.3f – %.3f\n",
+            y_lo_data, y_hi_data))
+cat(sprintf("Y-axis plot limits used (with padding):    %.3f – %.3f\n",
+            y_lo_plot, y_hi_plot))
+
+p_copy_log_comb_s1s4 <- ggplot(copy_n_log_s1s4,
+                           aes(x = copy_n_bin, y = 10^mean_log,
+                               color = element_label, group = element_label)) +
+  geom_errorbar(
+    aes(ymin = 10^(mean_log - ci95_log), ymax = 10^(mean_log + ci95_log)),
+    width = 0.15, alpha = 0.4
+  ) +
+  geom_line(linewidth = 0.7) +
+  geom_point(size = 1.8) +
+  scale_y_log10(
+    breaks = 10^(-1:1),
+    labels = scales::label_log(),
+    limits = c(y_lo_plot, y_hi_plot)
+  ) +
+  annotation_logticks(sides = "l", size = 0.3) +
+  scale_color_manual(values = elem_colors, name = "Element") +
+  labs(
+    x = "Element copy number (S1–S4)",
+    y = "Activity score"
+  ) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+print(p_copy_log_comb_s1s4)
+save_fig("fig2b_copy_number", p_copy_log_comb_s1s4,
+         panel_width = PANEL_W * 1.1, panel_height = PANEL_H)
+```
+
+## Fig 2c
+```{r}
+## Fig 2c′ (combined) — Relative Activity vs. Ctrl Pool by Slot (iiiF-S5 Subset)
+## Single panel, three lines: e-NMU(iii), e-NMU(iv), Insu(i) — each pools BOTH
+## orientations. e-NMU(iii)/(iv) numerators are restricted to constructs with
+## NO insulator anywhere in S1–S4 (removes insulator co-occurrence as a
+## confound on those two lines). The Ctrl-pool baseline and the Insu(i) line
+## are NOT restricted — they use the original, full iiiF subset.
+
+id_cols_s1s4 <- paste0("insert_", 1:4, "_id")
+
+# ── iiiF subset (self-contained rebuild, matches earlier `df_iiiF`) ─────────
+df_iiiF_standalone <- df %>% filter(S5 == "e-NMU(iii)F")
+cat(nrow(df_iiiF_standalone), "constructs in iiiF subset.\n")
+
+# ── insulator-free version, for the e-NMU(iii)/(iv) numerators only ────────
+df_iiiF_no_insu_standalone <- df_iiiF_standalone %>%
+  filter(!if_any(all_of(id_cols_s1s4), ~ .x == "synthetic_insulator"))
+
+cat(nrow(df_iiiF_no_insu_standalone),
+    "constructs after removing insulator-bearing constructs (e-NMU(iii)/(iv) only).\n")
+
+# ── long tables: full (for Ctrl + Insu) and insulator-free (for e-NMU) ─────
+elements_long_three_full    <- build_elements_long(df_iiiF_standalone)
+elements_long_three_no_insu <- build_elements_long(df_iiiF_no_insu_standalone)
+
+elements_log_three_full    <- elements_long_three_full    %>% mutate(log_act = log10(avg_Rep + 0.05))
+elements_log_three_no_insu <- elements_long_three_no_insu %>% mutate(log_act = log10(avg_Rep + 0.05))
+
+# ── Ctrl-pool baseline per slot — from the FULL (unrestricted) subset ──────
+ctrl_baseline_three <- elements_log_three_full %>%
+  filter(family == "Ctrl") %>%
+  group_by(slot) %>%
+  summarise(
+    mean_log_ctrl = mean(log_act),
+    se_log_ctrl   = sd(log_act) / sqrt(n()),
+    n_ctrl        = n(),
+    .groups = "drop"
+  )
+
+cat("\n── Ctrl-pool n per slot (unrestricted) ──\n")
+print(ctrl_baseline_three %>% select(slot, n_ctrl))
+
+# ── e-NMU(iii)/(iv) element means — from the INSULATOR-FREE subset ─────────
+elem_mean_log_enmu <- elements_log_three_no_insu %>%
+  filter(element %in% c("e-NMU(iii)", "e-NMU(iv)")) %>%
+  group_by(family, element, slot) %>%
+  summarise(
+    mean_log_elem = mean(log_act),
+    se_log_elem   = sd(log_act) / sqrt(n()),
+    n_elem        = n(),
+    .groups = "drop"
+  )
+
+# ── Insu(i) element means — from the FULL (unrestricted) subset ────────────
+elem_mean_log_insu <- elements_log_three_full %>%
+  filter(element == "Insu(i)") %>%
+  group_by(family, element, slot) %>%
+  summarise(
+    mean_log_elem = mean(log_act),
+    se_log_elem   = sd(log_act) / sqrt(n()),
+    n_elem        = n(),
+    .groups = "drop"
+  )
+
+elem_mean_log_three <- bind_rows(elem_mean_log_enmu, elem_mean_log_insu)
+
+cat("\n── n per (element, slot) ──\n")
+print(elem_mean_log_three %>% select(element, slot, n_elem))
+
+# ── combine: log2 FC vs. Ctrl pool, same algebra as original chunk ─────────
+target_elements <- c("e-NMU(iii)", "e-NMU(iv)", "Insu(i)")
+
+relative_summary_three <- elem_mean_log_three %>%
+  inner_join(ctrl_baseline_three, by = "slot") %>%
+  mutate(
+    delta_log  = mean_log_elem - mean_log_ctrl,
+    se_delta   = sqrt(se_log_elem^2 + se_log_ctrl^2),
+    ci95_delta = se_delta * 1.96,
+    log2_fc    = delta_log / log10(2),
+    log2_lo    = (delta_log - ci95_delta) / log10(2),
+    log2_hi    = (delta_log + ci95_delta) / log10(2),
+    element    = factor(as.character(element), levels = target_elements)
+  )
+
+# ── single-panel plot, three lines, color legend titled "Element" ──────────
+p_fig2c_three_combined <- ggplot(relative_summary_three,
+                  aes(x = slot, y = log2_fc,
+                      color = element, group = element)) +
+  geom_hline(yintercept = 0, linetype = "dashed",
+             color = "grey50", linewidth = 0.4) +
+  geom_errorbar(aes(ymin = log2_lo, ymax = log2_hi),
+                width = 0.15, alpha = 0.6) +
+  geom_line(linewidth = 0.7) +
+  geom_point(size = 1.8) +
+  scale_color_manual(values = elem_colors_rel, name = "Element") +
+  scale_x_continuous(breaks = 1:4, labels = paste0("S", 1:4)) +
+  coord_cartesian(ylim = c(-2, 2.5)) +
+  labs(
+    x     = "Slot position",
+    y     = expression(log[2] ~ "(FC vs. Ctrl pool)")
+  ) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+print(p_fig2c_three_combined)
+save_fig("fig2c_relative_activity_iii_iv_insu",
+         p_fig2c_three_combined, panel_width = PANEL_W, panel_height = PANEL_H)
+
+
+## ── unique sCRLs contributing to each numerator line (not the Ctrl denominator) ──
+
+id_cols_s1s4 <- paste0("insert_", 1:4, "_id")
+
+n_enmu_iii <- df_iiiF_no_insu_standalone %>%
+  filter(if_any(all_of(id_cols_s1s4), ~ .x == "eNMU_region_iii")) %>%
+  nrow()
+
+n_enmu_iv <- df_iiiF_no_insu_standalone %>%
+  filter(if_any(all_of(id_cols_s1s4), ~ .x == "eNMU_region_iv")) %>%
+  nrow()
+
+n_insu <- df_iiiF_standalone %>%
+  filter(if_any(all_of(id_cols_s1s4), ~ .x == "synthetic_insulator")) %>%
+  nrow()
+
+cat(sprintf("e-NMU(iii) numerator: n = %d unique sCRLs (insulator-free subset)\n", n_enmu_iii))
+cat(sprintf("e-NMU(iv) numerator:  n = %d unique sCRLs (insulator-free subset)\n", n_enmu_iv))
+cat(sprintf("Insu(i) numerator:    n = %d unique sCRLs (full subset)\n", n_insu))
+```
+
+## Fig 2d and Fig 2e
+```{r}
+id_cols_s1s4 <- paste0("insert_", 1:4, "_id")
+
+# ── Filter: iiiF-S5, exactly one eNMU(iii) or eNMU(iv) in S1–S4,
+#            exactly one insulator in S1–S4, no other eNMU anywhere in S1–S4
+df_base <- df %>%
+  filter(S5 == "e-NMU(iii)F") %>%
+  rowwise() %>%
+  mutate(
+    n_insu       = sum(c_across(all_of(id_cols_s1s4)) == "synthetic_insulator"),
+    n_enmu_iiiiv = sum(str_detect(c_across(all_of(id_cols_s1s4)), "eNMU_region_(iii|iv)")),
+    n_enmu_any   = sum(str_detect(c_across(all_of(id_cols_s1s4)), "eNMU_region"))
+  ) %>%
+  ungroup() %>%
+  filter(n_insu == 1, n_enmu_iiiiv == 1, n_enmu_any == 1) %>%
+  rowwise() %>%
+  mutate(
+    insu_slot = which(c_across(all_of(id_cols_s1s4)) == "synthetic_insulator"),
+    enmu_slot = which(str_detect(c_across(all_of(id_cols_s1s4)), "eNMU_region_(iii|iv)"))
+  ) %>%
+  ungroup() %>%
+  filter(insu_slot != enmu_slot) %>%
+  mutate(
+    enmu_side = if_else(enmu_slot < insu_slot, "eNMU left of insulator",
+                                               "eNMU right of insulator"),
+    enmu_side = factor(enmu_side, levels = c("eNMU right of insulator",
+                                             "eNMU left of insulator"))
+  )
+
+cat(nrow(df_base), "constructs after filtering.\n")
+
+# ── Grouped bar: left vs right ────────────────────────────────────────────────
+df_grouped_summary <- df_base %>%
+  mutate(log_act = log10(avg_Rep + 0.05)) %>%
+  group_by(enmu_side) %>%
+  summarise(
+    mean_log = mean(log_act),
+    se_log   = sd(log_act) / sqrt(n()),
+    ci95_log = se_log * qt(0.975, pmax(n() - 1, 1)),
+    n        = n(),
+    .groups  = "drop"
+  ) %>%
+  mutate(
+    label = factor(
+      paste0(enmu_side, " (n = ", n, ")"),
+      levels = paste0(levels(enmu_side), " (n = ",
+                      n[match(levels(enmu_side), enmu_side)], ")")
+    )
+  )
+
+cat("\n── Grouped summary ──\n")
+print(df_grouped_summary)
+
+p_grouped <- ggplot(df_grouped_summary,
+                    aes(x = 10^mean_log, y = label)) +
+  geom_col(fill = unname(COLOR_OTHER), alpha = 0.85, width = 0.65) +
+  geom_errorbarh(
+    aes(xmin = 10^(mean_log - ci95_log),
+        xmax = 10^(mean_log + ci95_log)),
+    height = 0.25, linewidth = 0.5, color = "grey30"
+  ) +
+  scale_x_log10(
+    breaks = c(1, 10),
+    labels = scales::label_log(),
+    expand = expansion(mult = c(0, 0.12))
+  ) +
+  annotation_logticks(sides = "b", size = 0.3) +
+  labs(x = "Activity score", y = NULL) +
+  theme(
+    panel.grid.major   = element_blank(),
+    panel.grid.minor   = element_blank(),
+    axis.text.y        = element_text(family = FONT, size = 9)
+  )
+
+print(p_grouped)
+save_fig("fig2d_insu_lr_grouped", p_grouped, panel_width = PANEL_W * 0.8, panel_height = PANEL_H)
+
+# ── Individual bar: every (insu_slot × enmu_slot) combination ────────────────
+df_indiv_summary <- df_base %>%
+  mutate(log_act = log10(avg_Rep + 0.05)) %>%
+  group_by(enmu_side, insu_slot, enmu_slot) %>%
+  summarise(
+    mean_log = mean(log_act),
+    se_log   = sd(log_act) / sqrt(n()),
+    ci95_log = se_log * qt(0.975, pmax(n() - 1, 1)),
+    n        = n(),
+    .groups  = "drop"
+  ) %>%
+  mutate(
+    label = pmap_chr(
+      list(insu_slot, enmu_slot, n),
+      function(ins, enm, nn) {
+        slot_contents <- sapply(1:4, function(s) {
+          if (s == ins) "Insu"
+          else if (s == enm) "eNMU"
+          else "·"
+        })
+        sprintf("[%s]      (n = %d)", paste(slot_contents, collapse = " "), nn)
+      }
+    ),
+    sort_key = if_else(enmu_slot < insu_slot, 0, 1) * 100 + insu_slot * 10 + enmu_slot,
+    label    = fct_reorder(label, -sort_key)
+  )
+
+cat("\n── Individual summary ──\n")
+print(df_indiv_summary %>% select(enmu_side, insu_slot, enmu_slot, n, label))
+cat("\nGrouped n check — should match grouped summary above:\n")
+print(df_indiv_summary %>% group_by(enmu_side) %>% summarise(total_n = sum(n)))
+
+p_indiv <- ggplot(df_indiv_summary,
+                  aes(x = 10^mean_log, y = label)) +
+  geom_col(fill = unname(COLOR_OTHER), alpha = 0.85, width = 0.65) +
+  geom_errorbarh(
+    aes(xmin = 10^(mean_log - ci95_log),
+        xmax = 10^(mean_log + ci95_log)),
+    height = 0.25, linewidth = 0.5, color = "grey30"
+  ) +
+  scale_x_log10(labels = scales::label_log(),
+                expand  = expansion(mult = c(0, 0.12))) +
+  annotation_logticks(sides = "b", size = 0.3) +
+  labs(x = "Activity score", y = NULL) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor   = element_blank(),
+    axis.text.y        = element_text(family = FONT, size = 9)
+  )
+
+print(p_indiv)
+save_fig("fig2e_insu_lr_individual_bars", p_indiv, panel_width = PANEL_W *2.2, panel_height = PANEL_H *1.3)
+
+cat("\n── Fold change: eNMU right of insulator / eNMU left of insulator ──\n")
+fc <- with(df_grouped_summary,
+           10^mean_log[enmu_side == "eNMU right of insulator"] /
+           10^mean_log[enmu_side == "eNMU left of insulator"])
+cat(sprintf("Fold change (right / left): %.2fx\n", fc))
+cat(sprintf("log2 FC:                    %.3f\n",  log2(fc)))
+```
+
+## Fig 2f
+```{r holdout-bar, fig.width=6, fig.height=4}
+# Human-readable display names for each raw "family/model" label.
+PRETTY_MODEL <- c(
+  "rfxgb/xgb"                      = "Gradient boosting",
+  "rfxgb/rf"                       = "Random forest",
+  "linear-interactions/ols"        = "OLS + int",
+  "linear-interactions/ridge"      = "Ridge + int",
+  "linear-interactions/lasso"      = "Lasso + int",
+  "linear-interactions/elasticnet" = "Elastic net + int",
+  "linear/ols"                     = "OLS",
+  "linear/ridge"                   = "Ridge",
+  "linear/lasso"                   = "Lasso",
+  "linear/elasticnet"              = "Elastic net"
+)
+
+# Flag any label missing from the map rather than silently keeping the raw form.
+unmapped <- setdiff(model_r2$model_label, names(PRETTY_MODEL))
+if (length(unmapped)) warning("Unmapped model labels: ",
+                              paste(unmapped, collapse = ", "))
+
+# ── Pearson r ─────────────────────────────────────────────────────────────────
+# Recode to pretty names, THEN order by the metric so the reorder acts on the
+# display labels. .desc = TRUE puts the largest value in the first factor level,
+# which ggplot renders at the BOTTOM of the discrete y-axis → best model at bottom.
+model_r_bar <- model_r2 %>%
+  mutate(
+    model_pretty = recode(model_label, !!!PRETTY_MODEL),
+    model_pretty = fct_reorder(model_pretty, pearson_r, .desc = TRUE)
+  )
+
+p_fig2f_bar <- ggplot(model_r_bar, aes(x = pearson_r, y = model_pretty)) +
+  geom_col(fill = "gray", alpha = 1, width = 0.6) +
+  geom_text(aes(label = sprintf("%.2f", pearson_r)),
+            hjust = -0.1, size = ANNOT_SIZE, family = FONT) +
+  scale_x_continuous(limits = c(0, 1),
+                     expand = expansion(mult = c(0, 0.05))) +
+  labs(x = expression(Test ~ set ~ italic(r)), y = NULL) +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+print(p_fig2f_bar)
+save_fig("fig2f_bar_pearsonr_by_model", p_fig2f_bar, panel_width = PANEL_W * 0.9, panel_height = PANEL_H)
+```
+
+
+
+```{r per-context-metrics}
+
+# Filter the per-construct holdout predictions to iiiF, ivR, iiiR-at-S5, then summarize.
+# Restrict to data_subset == "full": the combined file also stacks a separate
+# "iiiF_only" evaluation run, which would otherwise add 8 extra points/model
+# (233 full + 8 iiiF_only = 241).
+holdout_promoters_only <- holdout_df %>%
+  filter(data_subset == "full") %>%
+  filter(insert_5_id == "eNMU_region_iii" | insert_5_id == "eNMU_region_iv") %>%
+  filter(!(insert_5_id == "eNMU_region_iv" & insert_5_ori == "forward")) #not iiiF
+
+cat(nrow(holdout_promoters_only), "promoter-S5 holdout points",
+    sprintf("(%d per model).\n", nrow(holdout_promoters_only) / n_distinct(holdout_promoters_only$model_label)))
+# 718 per model
+
+holdout_except_promoters <- holdout_df %>%
+  filter(data_subset == "full") %>%
+  filter(insert_5_id != "eNMU_region_iii") %>% #not iiiF, iiiR
+  filter(!(insert_5_id == "eNMU_region_iv" & insert_5_ori == "reverse")) #not ivR
+
+cat(nrow(holdout_except_promoters), "not-promoter-S5 holdout points",
+    sprintf("(%d per model).\n", nrow(holdout_except_promoters) / n_distinct(holdout_except_promoters$model_label)))
+# 4687 per model
+
+# 4687 + 718 = 5405 -- good
+
+
+holdout_iiiF <- holdout_df %>%
+  filter(data_subset == "full",
+         insert_5_id == "eNMU_region_iii", insert_5_ori == "forward")
+
+holdout_iiiR <- holdout_df %>%
+  filter(data_subset == "full",
+         insert_5_id == "eNMU_region_iii", insert_5_ori == "reverse")
+
+holdout_ivR <- holdout_df %>%
+  filter(data_subset == "full",
+         insert_5_id == "eNMU_region_iv", insert_5_ori == "reverse")
+
+cat(nrow(holdout_iiiF), "iiiF-S5 holdout points",
+    sprintf("(%d per model).\n", nrow(holdout_iiiF) / n_distinct(holdout_iiiF$model_label)))
+cat(nrow(holdout_iiiR), "iiiR-S5 holdout points",
+    sprintf("(%d per model).\n", nrow(holdout_iiiR) / n_distinct(holdout_iiiR$model_label)))
+cat(nrow(holdout_ivR), "ivR-S5 holdout points",
+    sprintf("(%d per model).\n", nrow(holdout_ivR) / n_distinct(holdout_ivR$model_label)))
+
+# 233 + 151 + 334 = 718, good
+
+### MAIN TEXT r for iiiF only
+model_r2_iiiF <- holdout_iiiF %>%
+  group_by(model_label) %>%
+  summarise(
+    r2         = r2_score(actual_avg_Rep, predicted_avg_Rep),
+    pearson_r  = cor(actual_avg_Rep, predicted_avg_Rep, method = "pearson"),
+    pearson_r2 = pearson_r^2,
+    n          = n(),
+    .groups = "drop"
+  )
+model_r2_iiiR <- holdout_iiiR %>%
+  group_by(model_label) %>%
+  summarise(
+    r2         = r2_score(actual_avg_Rep, predicted_avg_Rep),
+    pearson_r  = cor(actual_avg_Rep, predicted_avg_Rep, method = "pearson"),
+    pearson_r2 = pearson_r^2,
+    n          = n(),
+    .groups = "drop"
+  )
+model_r2_ivR <- holdout_ivR %>%
+  group_by(model_label) %>%
+  summarise(
+    r2         = r2_score(actual_avg_Rep, predicted_avg_Rep),
+    pearson_r  = cor(actual_avg_Rep, predicted_avg_Rep, method = "pearson"),
+    pearson_r2 = pearson_r^2,
+    n          = n(),
+    .groups = "drop"
+  )
+
+### r for promoters only, grouped
+model_r2_promoters_only <- holdout_promoters_only %>%
+  group_by(model_label) %>%
+  summarise(
+    r2         = r2_score(actual_avg_Rep, predicted_avg_Rep),
+    pearson_r  = cor(actual_avg_Rep, predicted_avg_Rep, method = "pearson"),
+    pearson_r2 = pearson_r^2,
+    n          = n(),
+    .groups = "drop"
+  )
+
+
+### MAIN TEXT r for except-promoters
+model_r2_except_promoters <- holdout_except_promoters %>%
+  group_by(model_label) %>%
+  summarise(
+    r2         = r2_score(actual_avg_Rep, predicted_avg_Rep),
+    pearson_r  = cor(actual_avg_Rep, predicted_avg_Rep, method = "pearson"),
+    pearson_r2 = pearson_r^2,
+    n          = n(),
+    .groups = "drop"
+  )
+```
+
+## Fig 2g
+```{r}
+# ── Select the rfxgb/rf model specifically ───────────────────────────────────
+target_model <- "rfxgb/rf"
+
+if (!target_model %in% model_r2$model_label) {
+  stop(sprintf("model_label '%s' not found. Available labels: %s",
+               target_model, paste(model_r2$model_label, collapse = ", ")))
+}
+
+cat("Selected model:", target_model,
+    "| Pearson r =", round(model_r2$pearson_r[model_r2$model_label == target_model], 3), "\n")
+
+holdout_best <- holdout_df %>% filter(model_label == target_model)
+
+r_best <- cor(holdout_best$actual_avg_Rep,
+              holdout_best$predicted_avg_Rep,
+              method = "pearson")
+
+# ── Rebuild S5 fresh, collapsing everything non-target into "All other" ─────
+holdout_best <- holdout_best %>%
+  mutate(
+    S5 = case_when(
+      insert_5_id == "eNMU_region_iii" & insert_5_ori == "forward" ~ "e-NMU(iii)F",
+      insert_5_id == "eNMU_region_iii" & insert_5_ori == "reverse" ~ "e-NMU(iii)R",
+      insert_5_id == "eNMU_region_iv"  & insert_5_ori == "reverse" ~ "e-NMU(iv)R",
+      TRUE                                                        ~ "All other"
+    ),
+    S5 = factor(S5, levels = c("e-NMU(iii)F", "e-NMU(iii)R", "e-NMU(iv)R", "All other"))
+  )
+
+set.seed(42)
+best_sample <- holdout_best %>%
+  slice_sample(n = min(20000, nrow(.))) %>%
+  mutate(
+    actual_plot    = pmax(actual_avg_Rep    + 0.05, 0.05),
+    predicted_plot = pmax(predicted_avg_Rep + 0.05, 0.05)
+  )
+
+cat(sprintf("Model: %s\n", target_model))
+cat(sprintf("Total points plotted: %d\n", nrow(best_sample)))
+print(table(best_sample$S5))
+
+set.seed(42)
+best_shuffled <- best_sample %>% slice_sample(prop = 1)
+
+r_label <- sprintf('italic(r) ~ "= %.2f"', r_best)
+
+base_scales <- list(
+  scale_x_log10(labels = scales::label_log()),
+  scale_y_log10(labels = scales::label_log()),
+  annotation_logticks(sides = "bl", size = 0.3),
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted", color = "black"),
+  labs(x = "Actual activity score", y = "Predicted activity score"),
+  annotate("text", x = 1.04, y = Inf, hjust = 0, vjust = 1.5,
+           label = r_label, parse = TRUE, size = ANNOT_SIZE),
+  theme(
+    legend.position      = "bottom",
+    legend.justification = "center",
+    panel.grid.major     = element_blank(),
+    panel.grid.minor     = element_blank()
+  )
+)
+
+p_fig2g <- ggplot(best_shuffled,
+       aes(x = actual_plot, y = predicted_plot, color = S5,
+           shape = S5, size = S5, alpha = S5, stroke = S5)) +
+  geom_point() +
+  scale_color_manual(
+    values = c(
+      "All other"   = unname(COLOR_OTHER),
+      "e-NMU(iv)R"  = unname(enmu_palette[4]),
+      "e-NMU(iii)F" = unname(COLOR_IIIF),
+      "e-NMU(iii)R" = unname(COLOR_IIIF)
+    ),
+    name = "S5 identity"
+  ) +
+  scale_shape_manual(
+    values = c("All other" = 16, "e-NMU(iv)R" = 16,
+               "e-NMU(iii)F" = 16, "e-NMU(iii)R" = 4),
+    name = "S5 identity"
+  ) +
+  scale_size_manual(
+    values = c("All other" = 0.5, "e-NMU(iv)R" = 0.5,
+               "e-NMU(iii)F" = 0.5, "e-NMU(iii)R" = 0.5),
+    name = "S5 identity"
+  ) +
+  scale_alpha_manual(
+    values = c("All other" = 0.7, "e-NMU(iv)R" = 0.7,
+               "e-NMU(iii)F" = 0.7, "e-NMU(iii)R" = 0.7),
+    name = "S5 identity"
+  ) +
+  scale_discrete_manual("stroke",
+    values = c("All other" = 0.3, "e-NMU(iv)R" = 0.3,
+               "e-NMU(iii)F" = 0.3, "e-NMU(iii)R" = 0.3),
+    name = "S5 identity"
+  ) +
+  guides(
+    color = guide_legend(override.aes = list(size = 1.5), nrow = 2),
+    shape = guide_legend(nrow = 2),
+    alpha = guide_legend(nrow = 2),
+    size  = guide_legend(nrow = 2)
+  ) +
+  base_scales
+
+print(p_fig2g)
+save_fig("fig2g_rf_scatter", p_fig2g, panel_width = PANEL_W * 0.9)
+```
+
+## Fig 2h — Holdout Learning Curve (mean ± 95% CI across 50 permutations)
+Holdout Pearson r of the selected model (`downsample_model`, currently
+**`r ds_model_label`**) as a function of the **% of training data removed**. 
+The solid line is the **mean across the 50 downsampling permutations** and the 
+shaded band is the **t-based 95% confidence interval** 
+(mean ± t·SE, t from Student's t with n_perm − 1 df). The
+grey box marks the region **within 5% of the full-data (100%) mean
+performance** (the curve is plateaued at the top, so "maximum" is anchored to
+the 100%-data mean rather than the noise-sensitive empirical argmax). The dotted
+line marks the least training data at which the **lower 95% CI bound** still
+clears the 95%-of-max threshold.
+```{r fig2h-learning-curve-pearsonr-ci, fig.width=4.3, fig.height=3.3}
+# Max ±5% band. "Maximum" is anchored to the FULL-DATA (fraction == 1.0) mean
+# rather than the empirical argmax of the curve: the curve is plateaued across
+# the top few percent, so the argmax floats to a fraction < 100% purely by
+# random-forest / subsampling noise (99% beats 100% by ~2e-5). Anchoring to the
+# 100%-data mean makes "maximum" = "performance with all the data", matching the
+# plain reading of the sufficiency claim and removing the noise sensitivity.
+pr_max  <- ds_ci_full$pearson_r[ds_ci_full$fraction == 1.0]
+band_lo <- 0.95 * pr_max
+band_hi <- 1.05 * pr_max
+
+# Data-sufficiency threshold: the smallest training fraction at which the lower
+# 95% CI bound of the mean Pearson r still clears 95% of the maximum.
+thresh_row <- ds_ci_full %>%
+  filter(pearson_r_lo >= band_lo) %>%
+  slice_min(fraction, n = 1)
+
+pct_used_thresh    <- thresh_row$pct_used      # % of full training data that suffices
+pct_removed_thresh <- thresh_row$pct_removed   # complementary % removed
+
+cat(sprintf("mean Pearson r max = %.4f | 95%%-of-max = %.4f\n", pr_max, band_lo))
+cat(sprintf("lower 95%% CI clears 95%%-of-max at %.0f%% of data used (%.0f%% removed), n_train = %d (mean r = %.4f, lo = %.4f)\n",
+            pct_used_thresh, pct_removed_thresh, thresh_row$n_train,
+            thresh_row$pearson_r, thresh_row$pearson_r_lo))
+
+p_fig2h_pearsonr_ci <- ggplot(ds_ci_full, aes(x = pct_removed, y = pearson_r)) +
+  # Grey box: within 5% of maximum mean performance.
+  annotate("rect", xmin = 0, xmax = 100, ymin = band_lo, ymax = band_hi,
+           fill = "grey80", alpha = 0.6) +
+  annotate("text", x = 100, y = band_hi,
+           label = "Max~italic(r) ~ '± 5%'", parse = TRUE,
+           hjust = 1, vjust = 4.5, size = 3, family = FONT, color = "grey40") +
+  # Data-sufficiency threshold (lower-CI crossing), in "% removed" space.
+  geom_vline(xintercept = pct_removed_thresh, linetype = "dotted",
+             color = "grey30", linewidth = 0.5) +
+  # 95% CI band across permutations (full 1% grid).
+  ## UN/COMMENT THE BELOW TO TOGGLE 95% CI BAND
+  geom_ribbon(aes(ymin = pearson_r_lo, ymax = pearson_r_hi),
+              fill = unname(COLOR_LINE), alpha = 0.18) +
+  geom_line(linewidth = 0.5, color = unname(COLOR_LINE)) +
+  # # Thinned points to declutter the mean curve.
+  # geom_point(data = ds_ci, size = 0.8, color = unname(COLOR_LINE)) +
+  scale_x_continuous(labels = function(x) paste0(x, "%"),
+                     breaks = seq(0, 100, 25), limits = c(0, 100)) +
+  labs(
+    x = "Training data removed (%)",
+    y = expression(Test ~ set ~ italic(r))
+  ) +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+print(p_fig2h_pearsonr_ci)
+save_fig(paste0("fig2h_", downsample_model, "_learning_curve_pearsonr_ci"),
+         p_fig2h_pearsonr_ci, panel_width = PANEL_W * 0.9, panel_height = PANEL_H)
+```
+
+### Main-text sentence
+
+We next performed a downsampling analysis in which we systematically reduced the
+training set size and found that **`r sprintf("%.0f%%", pct_used_thresh)`** of
+the full training data was sufficient to recover 95% of the maximum Pearson r
+(Fig. 2h), ...
+
+### Exact 95%-of-max threshold on the mean curve (1% resolution)
+
+For reference, the crossing computed on the **mean** curve alone (no CI), at the
+full 1% resolution.
+
+```{r fig2h-threshold-1pct-resolution}
+cat(sprintf("Full-resolution sweep: %d fractions (every %.0f%%) for model '%s'.\n",
+            nrow(ds_curve_full),
+            100 * min(diff(sort(unique(ds_curve_full$fraction)))),
+            downsample_model))
+
+# ── Pearson r (mean curve) ────────────────────────────────────────────────────
+# "Maximum" anchored to the full-data (fraction == 1.0) mean (see the CI chunk).
+pr_max_full  <- ds_curve_full$pearson_r[ds_curve_full$fraction == 1.0]
+band_lo_full <- 0.95 * pr_max_full
+row_r <- ds_curve_full %>%
+  filter(pearson_r >= band_lo_full) %>%
+  slice_min(fraction, n = 1)
+
+cat(sprintf("mean Pearson r max = %.4f | 95%%-of-max = %.4f reached at %.0f%% of data used (n_train = %d, r = %.4f)\n",
+            pr_max_full, band_lo_full, row_r$fraction * 100, row_r$n_train, row_r$pearson_r))
+```
+
+# Supplementary Figure 2
+## Fig S2a
+```{r}
+id_cols_all  <- paste0("insert_", 1:5, "_id")
+id_cols_s1s4 <- paste0("insert_", 1:4, "_id")
+ori_cols_all <- paste0("insert_", 1:5, "_ori")
+
+line_data_ivrev <- rfxgb_full %>%
+  mutate(
+    group = case_when(
+      insert_5_id == "eNMU_region_iii" & insert_5_ori == "forward" ~ "e-NMU(iii)F",
+      insert_5_id == "eNMU_region_iii" & insert_5_ori == "reverse" ~ "e-NMU(iii)R",
+      insert_5_id == "eNMU_region_iv"  & insert_5_ori == "reverse" ~ "e-NMU(iv)R",
+      TRUE ~ "minP"
+    ),
+    # iiiF / iiiR / ivR: count enhancers in S1-S4 only (range 0-4)
+    # minP: count enhancers in S1-S5 (range 0-5)
+    total_enmu = if_else(
+      group == "minP",
+      rowSums(across(all_of(id_cols_all),  ~ as.integer(str_detect(.x, "eNMU_region")))),
+      rowSums(across(all_of(id_cols_s1s4), ~ as.integer(str_detect(.x, "eNMU_region"))))
+    ),
+    group = factor(group, levels = c("e-NMU(iii)F", "e-NMU(iii)R", "e-NMU(iv)R", "minP"))
+  )
+
+# ── print total n per line (group) ────────────────────────────────────────────
+cat("\n── Total constructs per line ──\n")
+print(line_data_ivrev %>% count(group, name = "n_total"))
+
+# ── facet title map, matching FigS2a nomenclature: "<name>-S5 (n = ###)" ────
+panel_title_map_2a <- c(
+  "e-NMU(iii)F" = "e-NMU(iii)F-S5",
+  "e-NMU(iii)R" = "e-NMU(iii)R-S5",
+  "e-NMU(iv)R"  = "e-NMU(iv)R-S5",
+  "minP"        = "minP"
+)
+
+panel_n_2a <- line_data_ivrev %>% count(group, name = "n_panel")
+
+panel_labels_2a <- setNames(
+  paste0(panel_title_map_2a[levels(line_data_ivrev$group)],
+         " (n = ", scales::comma(panel_n_2a$n_panel[match(levels(line_data_ivrev$group), panel_n_2a$group)]), ")"),
+  levels(line_data_ivrev$group)
+)
+
+line_data_ivrev <- line_data_ivrev %>%
+  mutate(panel_label = factor(panel_labels_2a[as.character(group)], levels = panel_labels_2a))
+
+group_colors_2a <- c(
+  "e-NMU(iii)F" = unname(COLOR_IIIF),
+  "e-NMU(iii)R" = unname(COLOR_IIIF),
+  "e-NMU(iv)R"  = unname(enmu_palette[4]),
+  "minP"        = unname(COLOR_OTHER)
+)
+# recolor by panel_label instead of group, since facet now uses panel_label
+panel_colors_2a <- setNames(group_colors_2a[levels(line_data_ivrev$group)], panel_labels_2a)
+
+p_fig2a_iiirev_ivrev_violin_facet <- ggplot(line_data_ivrev,
+                        aes(x = factor(total_enmu), y = avg_Rep + 0.05,
+                            fill = panel_label)) +
+  geom_violin(trim = FALSE, alpha = 0.7, color = "grey30", linewidth = 0.3) +
+  geom_boxplot(width = 0.1, outlier.shape = NA,
+              color = "black", linewidth = 0.3, alpha = 1) +
+  scale_fill_manual(values = panel_colors_2a, guide = "none") +
+  scale_y_log10(labels = scales::label_log(),
+               breaks = 10^(-1:4),
+               expand = expansion(mult = c(0.05, 0.25))) +
+  annotation_logticks(sides = "l", size = 0.3) +
+  facet_wrap(~ panel_label, nrow = 1, scales = "free_x") +
+  labs(
+    x = "# of enhancers in upstream slots",
+    y = "Activity score"
+  ) +
+  theme(
+    axis.title.y     = element_text(hjust = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    strip.text       = element_text(size = 8),
+    legend.position  = "none"
+  )
+
+print(p_fig2a_iiirev_ivrev_violin_facet)
+save_fig("figS2a_upstream_enh_violin", p_fig2a_iiirev_ivrev_violin_facet,
+         panel_width = PANEL_W * 0.85, panel_height = PANEL_H*0.9)
+```
+
+## Fig S2b
+```{r}
+id_cols_s1s4 <- paste0("insert_", 1:4, "_id")
+
+active_ids   <- c("eNMU_region_iii", "eNMU_region_iv")
+inactive_ids <- c("eNMU_region_i", "eNMU_region_ii", "eNMU_region_v")
+all_enmu_ids <- c(active_ids, inactive_ids)
+
+# ── classify S5, count eNMU copies, and flag presence of each subset ────────
+df_base <- rfxgb_full %>%
+  mutate(
+    S5_group = case_when(
+      insert_5_id == "eNMU_region_iii" & insert_5_ori == "forward" ~ "e-NMU(iii)F",
+      insert_5_id == "eNMU_region_iii" & insert_5_ori == "reverse" ~ "e-NMU(iii)R",
+      insert_5_id == "eNMU_region_iv"  & insert_5_ori == "reverse" ~ "e-NMU(iv)R",
+      TRUE ~ "Other"
+    ),
+    n_active     = rowSums(across(all_of(id_cols_s1s4), ~ .x %in% active_ids)),
+    n_inactive   = rowSums(across(all_of(id_cols_s1s4), ~ .x %in% inactive_ids)),
+    has_active   = n_active   > 0,
+    has_inactive = n_inactive > 0,
+    is_mixed     = has_active & has_inactive
+  )
+
+s5_order <- c("e-NMU(iii)F", "e-NMU(iii)R", "e-NMU(iv)R", "Other")
+
+panel_title_map <- c(
+  "e-NMU(iii)F" = "e-NMU(iii)F-S5",
+  "e-NMU(iii)R" = "e-NMU(iii)R-S5",
+  "e-NMU(iv)R"  = "e-NMU(iv)R-S5",
+  "Other"       = "minP"
+)
+
+# ── UNIQUE n per panel (mixed constructs excluded, counted once) ────────────
+panel_n_unique <- df_base %>%
+  filter(!is_mixed) %>%
+  count(S5_group, name = "n_panel") %>%
+  complete(S5_group = s5_order, fill = list(n_panel = 0))
+
+panel_labels <- setNames(
+  paste0(panel_title_map[s5_order],
+         " (n = ", scales::comma(panel_n_unique$n_panel[match(s5_order, panel_n_unique$S5_group)]), ")"),
+  s5_order
+)
+
+cat("── Unique n per panel (mixed constructs excluded, counted once) ──\n")
+print(panel_n_unique)
+
+# ── build two "pure" long datasets, one per line type ────────────────────────
+data_active <- df_base %>%
+  filter(!has_inactive) %>%
+  transmute(S5_group, avg_Rep,
+            line_type = "Active: e-NMU(iii), (iv)",
+            copy_n    = n_active)
+
+data_inactive <- df_base %>%
+  filter(!has_active) %>%
+  transmute(S5_group, avg_Rep,
+            line_type = "Inactive: e-NMU(i), (ii), (v)",
+            copy_n    = n_inactive)
+
+df_active_inactive_long <- bind_rows(data_active, data_inactive) %>%
+  mutate(
+    S5_group    = factor(S5_group, levels = s5_order),
+    panel_label = factor(panel_labels[as.character(S5_group)], levels = panel_labels),
+    line_type   = factor(line_type, levels = c("Active: e-NMU(iii), (iv)",
+                                                "Inactive: e-NMU(i), (ii), (v)")),
+    # ── collapse copy_n 3 and 4 into "3+" for all panels ───────────────────
+    copy_n_bin  = if_else(copy_n >= 3, "3+", as.character(copy_n)),
+    copy_n_bin  = factor(copy_n_bin, levels = c("0", "1", "2", "3+"))
+  )
+
+cat("\n── Purity filtering: constructs excluded per line ──\n")
+cat(sprintf("Active line   — excluded %s constructs with ≥1 inactive element present\n",
+            scales::comma(sum(df_base$has_inactive))))
+cat(sprintf("Inactive line — excluded %s constructs with ≥1 active element present\n",
+            scales::comma(sum(df_base$has_active))))
+
+# ── summarise on the collapsed bin (mean/CI recomputed from raw data) ───────
+summary_active_inactive <- df_active_inactive_long %>%
+  group_by(panel_label, line_type, copy_n_bin) %>%
+  summarise(
+    mean_log = mean(log10(avg_Rep + 0.05)),
+    se_log   = sd(log10(avg_Rep + 0.05)) / sqrt(n()),
+    ci95_log = se_log * qt(0.975, pmax(n() - 1, 1)),
+    n        = n(),
+    .groups  = "drop"
+  )
+
+cat("\n── Bins sorted by smallest n (informational only — nothing dropped) ──\n")
+print(summary_active_inactive %>% arrange(n) %>%
+        select(panel_label, line_type, copy_n_bin, n, mean_log, ci95_log) %>% head(10))
+
+# ── plot ──────────────────────────────────────────────────────────────────────
+Y_MIN <- 0.1   # 10^-1
+Y_MAX <- 200   # 10^2
+
+p_active_inactive <- ggplot(summary_active_inactive,
+                            aes(x = copy_n_bin, y = 10^mean_log,
+                                color = line_type, group = line_type)) +
+  geom_errorbar(aes(ymin = 10^(mean_log - ci95_log), ymax = 10^(mean_log + ci95_log)),
+                width = 0.15, alpha = 0.6) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 1.8) +
+  scale_color_manual(
+    values = c(
+      "Active: e-NMU(iii), (iv)"      = unname(COLOR_IIIF),
+      "Inactive: e-NMU(i), (ii), (v)" = unname(COLOR_OTHER)
+    ),
+    name = "e-NMU elements"
+  ) +
+  scale_y_log10(labels = scales::label_log()) +
+  coord_cartesian(ylim = c(Y_MIN, Y_MAX)) +
+  annotation_logticks(sides = "l", size = 0.3) +
+  facet_wrap(~ panel_label, nrow = 1, scales = "fixed") +
+  labs(
+    x = "Element copy number (S1–S4)",
+    y = "Activity score"
+  ) +
+  theme(
+    axis.title.y      = element_text(hjust = 0.5),
+    panel.grid.major  = element_blank(),
+    panel.grid.minor  = element_blank(),
+    strip.text        = element_text(size = 8)
+  )
+
+print(p_active_inactive)
+save_fig("figS2b_active_inactive_enmu_by_s5_fourpanel", p_active_inactive,
+         panel_width = PANEL_W * 0.68, panel_height = PANEL_H * 0.9)
+```
+
+## Fig S2c
+```{r figs2c, fig.width=9, fig.height=3.5}
+# Factor level order places e-NMU(i–v) on row 1, Ctrl(i–v) on row 2.
+# Insulator excluded entirely.
+fc_levels_enmu_top <- c(
+  "e-NMU(i)", "e-NMU(ii)", "e-NMU(iii)", "e-NMU(iv)", "e-NMU(v)",
+  "Ctrl(i)", "Ctrl(ii)", "Ctrl(iii)", "Ctrl(iv)", "Ctrl(v)"
+)
+
+ori_pos_fc_enmu_top <- ori_long %>%
+  group_by(element_id, element_label, slot, orientation) %>%
+  summarise(mean_raw = mean(avg_Rep), n = n(), .groups = "drop") %>%
+  pivot_wider(names_from = orientation, values_from = c(mean_raw, n)) %>%
+  mutate(
+    log2_fc       = log2((mean_raw_forward + 0.05) / (mean_raw_reverse + 0.05)),
+  color         = if_else(str_detect(element_id, "eNMU_region"),
+                        unname(COLOR_ENMU_GENERIC),
+                        get_part_color(paste0("insert_1_id_", element_id))),
+    element_label = factor(as.character(element_label), levels = fc_levels_enmu_top)
+  ) %>%
+  filter(!is.na(element_label))   # drops Insu(i) (not in levels vector)
+
+p_fig2d_fc_enmu_top <- ggplot(ori_pos_fc_enmu_top,
+                               aes(x = factor(slot), y = log2_fc, fill = color)) +
+  geom_col(show.legend = FALSE) +
+  scale_fill_identity() +
+  scale_x_discrete(labels = paste0("S", 1:5)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "#999") +
+  facet_wrap(~ element_label, nrow = 2, scales = "fixed") +
+  labs(
+    x = "Slot position",
+    y = expression(log[2] ~ "(Forward / Reverse)")
+  ) +
+  theme(strip.text = element_text(size = 8))
+
+print(p_fig2d_fc_enmu_top)
+save_fig("figS2c_orientation_log2fc", p_fig2d_fc_enmu_top, panel_width = PANEL_W*0.68, panel_height = PANEL_H*0.5)
+```
+
+## Fig S2d
+```{r}
+
+# ── rebuild ori_long standalone (self-contained; matches the shared build) ──
+ori_long_scatter <- map_dfr(1:5, function(s) {
+  df %>%
+    transmute(
+      slot        = s,
+      element_id  = .data[[paste0("insert_", s, "_id")]],
+      orientation = .data[[paste0("insert_", s, "_ori")]],
+      avg_Rep     = avg_Rep
+    )
+}) %>%
+  filter(!is.na(avg_Rep)) %>%
+  mutate(
+    element_label = element_id %>%
+      str_replace_all("eNMU_region_([ivx]+)",           "e-NMU(\\1)") %>%
+      str_replace_all("dinucleotide_shuffled_([ivx]+)", "Ctrl(\\1)")   %>%
+      str_replace_all("synthetic_insulator",             "Insu(i)")
+  )
+
+fc_levels_enmu_top <- c(
+  "e-NMU(i)", "e-NMU(ii)", "e-NMU(iii)", "e-NMU(iv)", "e-NMU(v)",
+  "Ctrl(i)", "Ctrl(ii)", "Ctrl(iii)", "Ctrl(iv)", "Ctrl(v)"
+)
+
+# ── per (element, slot): mean raw activity in each orientation, side by side ─
+ori_scatter_data <- ori_long_scatter %>%
+  group_by(element_id, element_label, slot, orientation) %>%
+  summarise(mean_raw = mean(avg_Rep), n = n(), .groups = "drop") %>%
+  pivot_wider(names_from = orientation, values_from = c(mean_raw, n)) %>%
+  mutate(
+    element_label = factor(as.character(element_label), levels = fc_levels_enmu_top)
+  ) %>%
+  filter(!is.na(element_label), !is.na(mean_raw_forward), !is.na(mean_raw_reverse))
+
+cat("── n per (element, slot) point ──\n")
+print(ori_scatter_data %>% select(element_label, slot, n_forward, n_reverse), n = Inf)
+
+# ── slot color scale (distinct from the element/family palettes above) ──────
+SLOT_COLORS <- c("1" = "#C03830", "2" = "#E7872B", "3" = "#E9C61D",
+                 "4" = "#356920", "5" = "#2D5F8A")
+
+# ── shared axis limits — tight to actual data range, no manual padding ─────
+axis_lo <- min(ori_scatter_data$mean_raw_forward + 0.05,
+              ori_scatter_data$mean_raw_reverse + 0.05)
+axis_hi <- max(ori_scatter_data$mean_raw_forward + 0.05,
+              ori_scatter_data$mean_raw_reverse + 0.05)
+
+cat(sprintf("Data range (shared axis): %.4f – %.4f\n", axis_lo, axis_hi))
+
+# ── only keep candidate breaks (10^-1, 10^0, 10^1) that fall within range ──
+candidate_breaks <- 10^(-1:1)
+axis_breaks <- candidate_breaks[candidate_breaks >= axis_lo & candidate_breaks <= axis_hi]
+
+cat("Breaks shown:", paste(axis_breaks, collapse = ", "), "\n")
+
+# ── All 10 elements (e-NMU top row, Ctrl bottom row), by slot ───────────────
+p_orientation_scatter_all <- ggplot(ori_scatter_data,
+       aes(x = mean_raw_forward + 0.05, y = mean_raw_reverse + 0.05,
+           color = factor(slot))) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed",
+             color = "grey50", linewidth = 0.4) +
+  geom_point(size = 2, alpha = 0.85) +
+  scale_color_manual(values = SLOT_COLORS, name = "Slot", labels = paste0("S", 1:5)) +
+  scale_x_log10(breaks = axis_breaks, labels = scales::label_log(),
+                limits = c(axis_lo, axis_hi)) +
+  scale_y_log10(breaks = axis_breaks, labels = scales::label_log(),
+                limits = c(axis_lo, axis_hi)) +
+  coord_fixed(ratio = 1) +
+  annotation_logticks(sides = "bl", size = 0.3) +
+  facet_wrap(~ element_label, nrow = 2) +
+  labs(
+    x = "Mean activity - forward orientation",
+    y = "Mean activity - reverse orientation"
+  ) +
+  theme(
+    strip.text        = element_text(size = 8),
+    panel.grid.major  = element_blank(),
+    panel.grid.minor  = element_blank()
+  )
+
+print(p_orientation_scatter_all)
+save_fig("figS2d_orientation_scatter_fwd_rev", p_orientation_scatter_all,
+         panel_width = PANEL_W * 0.64, panel_height = PANEL_H * 0.5)
+```
+
+# Supplementary Figure 3
+## Fig S3a
+```{r}
+id_cols_s1s4 <- paste0("insert_", 1:4, "_id")
+
+df_insu_count <- df %>%
+  filter(S5 == "e-NMU(iii)F") %>%
+  rowwise() %>%
+  mutate(
+    n_insu = sum(c_across(all_of(id_cols_s1s4)) == "synthetic_insulator")
+  ) %>%
+  ungroup() %>%
+  mutate(
+    n_insu_label = factor(n_insu, levels = 0:4)
+  )
+
+df_insu_count_summary <- df_insu_count %>%
+  mutate(log_act = log10(avg_Rep + 0.05)) %>%
+  group_by(n_insu_label) %>%
+  summarise(
+    mean_log = mean(log_act),
+    se_log   = sd(log_act) / sqrt(n()),
+    ci95_log = se_log * 1.96,
+    n        = n(),
+    .groups  = "drop"
+  )
+
+p_insu_violin <- ggplot(df_insu_count,
+                         aes(x = n_insu_label, y = avg_Rep + 0.05)) +
+  geom_violin(trim = FALSE, alpha = 0.7,
+              fill = unname(COLOR_INSULATOR), color = "grey30") +
+  geom_boxplot(width = 0.1, fill = unname(COLOR_INSULATOR), color = "grey30",
+               outlier.shape = NA) +
+  geom_text(data = df_insu_count_summary,
+            aes(x = n_insu_label, y = Inf, label = paste0("n = ", scales::comma(n))),
+            inherit.aes = FALSE,
+            vjust = -0.4, size = 3, family = FONT) +
+  scale_y_log10(labels = scales::label_log()) +
+  annotation_logticks(sides = "l", size = 0.3) +
+  coord_cartesian(clip = "off") +
+  labs(
+    x = "Insulator copy number (S1–S4)",
+    y = "Activity score"
+  ) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.margin      = margin(t = 20, r = 10, b = 5, l = 5)
+  )
+
+print(p_insu_violin)
+save_fig("figS3a_insu_count_violin", p_insu_violin, panel_width = PANEL_W*1.6, panel_height = PANEL_H)
+
+mean_0 <- df_insu_count_summary$mean_log[df_insu_count_summary$n_insu_label == "0"]
+mean_1 <- df_insu_count_summary$mean_log[df_insu_count_summary$n_insu_label == "1"]
+n_0    <- df_insu_count_summary$n[df_insu_count_summary$n_insu_label == "0"]
+n_1    <- df_insu_count_summary$n[df_insu_count_summary$n_insu_label == "1"]
+
+fold_diff <- 10^(mean_0 - mean_1)
+
+cat(sprintf("Constructs with 0 insulators (n = %d) show a %.2f-fold difference in activity relative to constructs with 1 insulator (n = %d).\n",
+            n_0, fold_diff, n_1))
+
+# ── 0 insulators vs. any (≥1) insulator ──────────────────────────────────────
+mean_log_any_insu <- df_insu_count %>%
+  filter(n_insu >= 1) %>%
+  summarise(mean_log = mean(log10(avg_Rep + 0.05))) %>%
+  pull(mean_log)
+
+fold_diff_any <- 10^(mean_0 - mean_log_any_insu)
+
+cat(sprintf("Constructs with 0 insulators (n = %d) show a %.2f-fold difference in activity relative to constructs with any insulator present (1–4, pooled, n = %d).\n",
+            n_0, fold_diff_any, sum(df_insu_count$n_insu >= 1)))
+```
+
+## Fig S3b and S3c
+```{r}
+id_cols_s1s4 <- paste0("insert_", 1:4, "_id")
+
+# ── shared filtered subset ───────────────────────────────────────────────────
+df_base_de <- df %>%
+  filter(S5 == "e-NMU(iii)F") %>%
+  rowwise() %>%
+  mutate(
+    n_insu       = sum(c_across(all_of(id_cols_s1s4)) == "synthetic_insulator"),
+    n_enmu_iiiiv = sum(str_detect(c_across(all_of(id_cols_s1s4)), "eNMU_region_(iii|iv)")),
+    n_enmu_any   = sum(str_detect(c_across(all_of(id_cols_s1s4)), "eNMU_region"))
+  ) %>%
+  ungroup() %>%
+  filter(n_insu == 1, n_enmu_iiiiv == 1, n_enmu_any == 1) %>%
+  rowwise() %>%
+  mutate(
+    insu_slot = which(c_across(all_of(id_cols_s1s4)) == "synthetic_insulator"),
+    enmu_slot = which(str_detect(c_across(all_of(id_cols_s1s4)), "eNMU_region_(iii|iv)"))
+  ) %>%
+  ungroup() %>%
+  filter(insu_slot != enmu_slot) %>%
+  mutate(
+    enmu_side = if_else(enmu_slot < insu_slot, "eNMU left of insulator",
+                                               "eNMU right of insulator"),
+    enmu_side = factor(enmu_side, levels = c("eNMU right of insulator",
+                                             "eNMU left of insulator")),
+    log_act   = log10(avg_Rep + 0.05)
+  )
+
+cat(nrow(df_base_de), "constructs after filtering.\n")
+
+# ── Fig 2d — grouped: left vs. right of insulator ────────────────────────────
+grouped_summary_2d <- df_base_de %>%
+  group_by(enmu_side) %>%
+  summarise(mean_log = mean(log_act), n = n(), .groups = "drop")
+
+label_map_2d    <- setNames(paste0(grouped_summary_2d$enmu_side, " (n = ", grouped_summary_2d$n, ")"),
+                            grouped_summary_2d$enmu_side)
+label_levels_2d <- label_map_2d[levels(df_base_de$enmu_side)]
+
+df_2d <- df_base_de %>%
+  mutate(label = factor(label_map_2d[as.character(enmu_side)], levels = label_levels_2d))
+
+grouped_summary_2d <- grouped_summary_2d %>%
+  mutate(
+    label   = factor(label_map_2d[as.character(enmu_side)], levels = label_levels_2d),
+    x_num   = as.numeric(label)
+  )
+
+p_2d_beeswarm <- ggplot(df_2d, aes(x = label, y = 10^log_act)) +
+  geom_violin(trim = FALSE, fill = unname(COLOR_OTHER), alpha = 0.7,
+             color = "grey30", linewidth = 0.4, scale = "width") +
+  geom_quasirandom(size = 1.1, alpha = 0.5, width = 0.28,
+                   color = "#3B3B3B", stroke = 0) +
+  geom_segment(
+    data = grouped_summary_2d,
+    aes(x = x_num - 0.4, xend = x_num + 0.4, y = 10^mean_log, yend = 10^mean_log),
+    inherit.aes = FALSE, color = "grey30", linewidth = 0.9
+  ) +
+  scale_y_log10(breaks = c(1, 10, 100), labels = scales::label_log()) +
+  annotation_logticks(sides = "b", size = 0.3) +
+  coord_flip() +
+  labs(x = NULL, y = "Activity score") +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.y       = element_text(family = FONT, size = 9)
+  )
+
+print(p_2d_beeswarm)
+save_fig("figS3b_insu_lr_beeswarm_violin_all", p_2d_beeswarm, panel_width = PANEL_W * 0.8, panel_height = PANEL_H)
+
+cat("\n── Fig 2d group n / mean ──\n")
+print(grouped_summary_2d %>% select(enmu_side, n, mean_log))
+
+# ── Fig 2e — individual (insu_slot × enmu_slot) combinations ────────────────
+combo_summary_2e <- df_base_de %>%
+  group_by(enmu_side, insu_slot, enmu_slot) %>%
+  summarise(mean_log = mean(log_act), n = n(), .groups = "drop") %>%
+  mutate(
+    label = pmap_chr(
+      list(insu_slot, enmu_slot, n),
+      function(ins, enm, nn) {
+        slot_contents <- sapply(1:4, function(s) {
+          if (s == ins) "Insu"
+          else if (s == enm) "eNMU"
+          else "·"
+        })
+        sprintf("[%s]      (n = %d)", paste(slot_contents, collapse = " "), nn)
+      }
+    ),
+    sort_key = if_else(enmu_slot < insu_slot, 0, 1) * 100 + insu_slot * 10 + enmu_slot,
+    label    = fct_reorder(label, -sort_key)
+  )
+
+df_2e <- df_base_de %>%
+  left_join(combo_summary_2e %>% select(insu_slot, enmu_slot, label),
+            by = c("insu_slot", "enmu_slot"))
+
+combo_summary_2e <- combo_summary_2e %>%
+  mutate(x_num = as.numeric(label))
+
+p_2e_beeswarm <- ggplot(df_2e, aes(x = label, y = 10^log_act)) +
+  geom_violin(trim = FALSE, fill = unname(COLOR_OTHER), alpha = 0.7,
+             color = "grey30", linewidth = 0.35, scale = "width") +
+  geom_quasirandom(size = 0.9, alpha = 0.5, width = 0.28,
+                   color = "#3B3B3B", stroke = 0) +
+  geom_segment(
+    data = combo_summary_2e,
+    aes(x = x_num - 0.4, xend = x_num + 0.4, y = 10^mean_log, yend = 10^mean_log),
+    inherit.aes = FALSE, color = "grey30", linewidth = 0.8
+  ) +
+  scale_y_log10(breaks = c(1, 10, 100), labels = scales::label_log()) +
+  annotation_logticks(sides = "b", size = 0.3) +
+  coord_flip() +
+  labs(x = NULL, y = "Activity score") +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor   = element_blank(),
+    axis.text.y        = element_text(family = FONT, size = 9)
+  )
+
+print(p_2e_beeswarm)
+save_fig("figS3c_insu_lr_beeswarm_violin", p_2e_beeswarm, panel_width = PANEL_W * 2.2, panel_height = PANEL_H * 1.3)
+
+cat("\n── Fig 2e combo n / mean ──\n")
+print(combo_summary_2e %>% select(enmu_side, insu_slot, enmu_slot, n, mean_log))
+```
+
+## Fig S3d
+```{r}
+insu_scatter_data <- ori_long_scatter %>%
+  filter(element_label == "Insu(i)") %>%
+  group_by(element_id, element_label, slot, orientation) %>%
+  summarise(mean_raw = mean(avg_Rep), n = n(), .groups = "drop") %>%
+  pivot_wider(names_from = orientation, values_from = c(mean_raw, n)) %>%
+  filter(!is.na(mean_raw_forward), !is.na(mean_raw_reverse))
+
+cat("── n per (Insu(i), slot) point ──\n")
+print(insu_scatter_data %>% select(slot, n_forward, n_reverse), n = Inf)
+
+p_orientation_scatter_insu <- ggplot(insu_scatter_data,
+       aes(x = mean_raw_forward + 0.05, y = mean_raw_reverse + 0.05,
+           color = factor(slot))) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed",
+             color = "grey50", linewidth = 0.4) +
+  geom_point(size = 2, alpha = 0.85) +
+  scale_color_manual(values = SLOT_COLORS, name = "Slot", labels = paste0("S", 1:5)) +
+  scale_x_log10(breaks = axis_breaks, labels = scales::label_log(),
+                limits = c(axis_lo, axis_hi)) +
+  scale_y_log10(breaks = axis_breaks, labels = scales::label_log(),
+                limits = c(axis_lo, axis_hi)) +
+  coord_fixed(ratio = 1) +
+  annotation_logticks(sides = "bl", size = 0.3) +
+  facet_wrap(~ element_label) +
+  labs(
+    x = "Mean activity - forward orientation",
+    y = "Mean activity - reverse orientation"
+  ) +
+  theme(
+    strip.text        = element_text(size = 8),
+    panel.grid.major  = element_blank(),
+    panel.grid.minor  = element_blank()
+  )
+
+print(p_orientation_scatter_insu)
+
+save_fig("figS3d_orientation_scatter_insu",
+         p_orientation_scatter_insu,
+         panel_width = PANEL_W, panel_height = PANEL_H)
+```
