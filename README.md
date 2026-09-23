@@ -16,7 +16,12 @@ See plasmid_descriptions for a description of all plasmids.
 
 Structures of custom sequencing amplicons used in this study are listed in "custom_amplicon_structures".
 
+# Raw Data Download
+
+Raw and processed sequencing data generated in this study have been deposited to the Gene Expression Omnibus (GEO, accession number GSE341622).
+
 # Scripts
+
 ## PacBio Association Scripts
 
 The BAM processing pipeline (revcomp_bam.sh) is first run, normalizing PacBio HiFi reads to a consistent strand orientation by reverse-complementing reads containing a known orientation motif. Insert sequences and barcodes are then extracted from the orientation-corrected reads using anchor-flanking sequence parsing (extract_inserts.sh), and raw insert sequences are annotated against a reference table to produce human-readable insert names (rename_inserts.sh). The annotated reads are collapsed to unique insert-barcode combinations with associated read counts (collapse_counts_stats.sh). Finally, the collapsed count table is filtered and processed using filter_association_file.R to generate a barcode-to-insert-combination association table, with barcodes filtered for correct length and unique insert-combo assignment.
