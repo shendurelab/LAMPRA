@@ -153,6 +153,29 @@ cd .. && python notebooks/model_comparison_merge.py && python notebooks/model_co
 The `submit_*.sh` files show the exact arguments used for every subset in the
 published run.
 
+### Runtime and resources
+
+Installing the `LAMPRA_ML` environment takes **1-2 minutes** on either a cluster
+or a standard desktop.
+
+The following cluster resources were used to run these scripts, for a total of
+**~1 hour 15 minutes** of wall-clock time across the six stages (SGE; 
+the per-stage `mem_free` and `-pe serial` requests are set in each
+`submit_*.sh`):
+
+| Stage | Requested | Wall time |
+|---|---|---|
+| 1. `submit_preprocess.sh` | 8 GB, 1 slot | < 1 min |
+| 2. `submit_train_linear.sh` | 16 GB, 4 slots | ~17 min |
+| 3. `submit_train_rfxgb.sh` | 32 GB, 8 slots | ~37 min |
+| 4. `submit_evaluate_best.sh` | 16 GB, 4 slots | ~2 min |
+| 5. `submit_downsample_rfonly_1pct_50perm.sh` | 48 GB, 8 slots | ~16 min (943 s; 50 x 100 RF fits) |
+| 6. `submit_model_comparison.sh` | 16 GB, 2 slots | ~1 min |
+
+
+Running **without a cluster** (Option B) takes an estimated **1.5-2 hours**
+end-to-end on a typical 8-core desktop with 16 GB of RAM. 
+
 ---
 
 ## Outputs
