@@ -153,6 +153,8 @@ cd .. && python notebooks/model_comparison_merge.py && python notebooks/model_co
 The `submit_*.sh` files show the exact arguments used for every subset in the
 published run.
 
+---
+
 ## Runtime and resources
 
 Installing the `LAMPRA_ML` environment takes **1-2 minutes** on either a cluster
