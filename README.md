@@ -20,10 +20,6 @@ Structures of custom sequencing amplicons used in this study are listed in "cust
 
 Raw and processed sequencing data generated in this study have been deposited to the Gene Expression Omnibus (GEO, accession number GSE341622).
 
-# License
-
-Released under the Creative Commons Attribution 4.0 International (CC BY 4.0) license.
-
 # Scripts
 
 ## PacBio Association Scripts
